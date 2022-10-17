@@ -6,7 +6,9 @@ from alg.scheduler.titan import TitanScheduler
 from client.job.base import JobManager
 import numpy as np
 import pandas as pd
+import multiprocessing
 import options
+import copy, glob
 from alg import (PlaceMentFactory, YarnCSScheduler, TiresiasScheduler, \
                 GandivaScheduler, ThemisScheduler, ShortestRemainingTimeFirstScheduler, \
                 TetriSchedScheduler, SigmaScheduler, GenieScheduler, OptimusScheduler, PolluxScheduler)
@@ -161,7 +163,7 @@ def summary_all_jobs(job_manager):
 
 
 
-def main(opt):
+def main(opt, logger):
     cluster_manager = prepare_cluster(opt)
     job_manager = prepare_job_manager() 
     user_manager = None 
@@ -186,10 +188,10 @@ def main(opt):
     elif opt.schedule == 'tiresias':
         num_queue = opt.num_queue
         service_list = sorted([job.target_num_gpus * job.target_duration for job in job_manager.job_list])
+        import pdb; pdb.set_trace() 
         queue_limit = np.percentile(service_list, [1.0 * i / num_queue * 100 for i in range(1, num_queue+1)])
         scheduler = TiresiasScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, num_queue=num_queue, queue_limit=queue_limit, \
-                                        search_algorithm=opt.search_algorithm, hpo_search_time_interval=opt.hpo_search_time_interval, \
                                         solve_starvation=0, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir)
     elif opt.schedule == 'themis':
         scheduler = ThemisScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
@@ -227,8 +229,25 @@ def main(opt):
 
 
 if __name__ == '__main__':
+
     opt = options.Singleton.init()
-    if not os.path.exists('log/'):
-        os.makedirs('log/')
-    logger = getLogger(name='log/{}_{}_{}'.format(opt.schedule, opt.placement, opt.ident), level=opt.log_level)
-    main(opt)
+    if os.path.isdir(opt.trace):
+        
+        args_list = list() 
+        opt_list = list() 
+        for workload in glob.glob(opt.trace + "/*.csv"): 
+            name = os.path.basename(workload)[:-4]
+            logger = getLogger(name='log/{}_{}_{}_{}'.format(opt.schedule, opt.placement, opt.ident, name), level=opt.log_level)
+            opt_list.append(copy.deepcopy(opt))
+            opt_list[-1].trace = workload
+            opt_list[-1].save_log_dir = opt.save_log_dir + "/" + name
+            args_list.append((opt_list[-1], logger))
+
+        with multiprocessing.Pool(processes=len(opt_list)) as pool:
+            ret_list = pool.map(main, args_list)
+        
+    else: 
+        if not os.path.exists('log/'):
+            os.makedirs('log/')
+        logger = getLogger(name='log/{}_{}_{}'.format(opt.schedule, opt.placement, opt.ident), level=opt.log_level)
+        main(opt, logger)

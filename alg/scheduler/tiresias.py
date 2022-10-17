@@ -3,7 +3,6 @@ import math
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 from client.job.state import JobState
 from .base import BaseScheduler
-from .hpo_tiresias import HPOTiresiasScheduler
 from .schedutils import resource_summary, schedule_summary
 
 HIGH_QUEUE_PRIORITY=0
@@ -227,73 +226,6 @@ class TiresiasScheduler(BaseScheduler):
 
         else:
             raise NotImplementedError
-
-    def search_hpo(self, cur_time): 
-        if self.search_algorithm == 'history': 
-            if len(self.completion_jobs) == 0: return 
-            from client.job.base import JobManager
-            from client.job import JobFactory
-            from server import cluster, profiler
-            from alg import PlaceMentFactory
-            import numpy as np 
-
-            job_manager = JobManager() 
-            cluster_instance = cluster.Cluster(num_switch=self.cluster_manager.num_switch, 
-                                        num_node_p_switch=self.cluster_manager.num_node_p_switch, 
-                                        num_gpu_p_node=self.cluster_manager.num_gpu_p_node,
-                                        num_cpu_p_node=self.cluster_manager.num_cpu_p_node, 
-                                        mem_p_node=self.cluster_manager.mem_p_node)
-            cluster_instance.init_infra(num_switch=self.cluster_manager.num_switch, 
-                                num_node_p_switch=self.cluster_manager.num_node_p_switch, 
-                                num_gpu_p_node=self.cluster_manager.num_gpu_p_node, 
-                                num_cpu_p_node=self.cluster_manager.num_cpu_p_node, 
-                                mem_p_node=self.cluster_manager.mem_p_node) 
-            
-            for job in self.completion_jobs: 
-                if job.submission_time < cur_time - 24 * 3600: continue 
-                job.duration = job.target_duration
-                job.num_gpus = job.target_num_replicas
-                job_instance = JobFactory(name=job.__alias__)(job)
-                job_manager.submit_job(job_instance)
-            if len(job_manager.job_list) <= 10: 
-                return 
-
-            PM = PlaceMentFactory(cluster_manager=cluster_instance, name=self.placement.__alias__)
-            service_list = sorted([job.target_num_gpus * job.target_duration for job in job_manager.job_list])
-            best_jct = None 
-            best_num_queue = 0 
-            best_queue_limit = None 
-            for num_queue in range(2, 10): 
-                queue_limit = np.percentile(service_list, [1.0 * i / num_queue * 100 for i in range(1, num_queue+1)]).astype(np.int32).tolist() 
-                scheduler = HPOTiresiasScheduler(job_manager=job_manager, cluster_manager=cluster_instance, user_manager=None, placement=PM, name='hpo_tiresias', \
-                                    logger=None, num_queue=num_queue, queue_limit=queue_limit, \
-                                    solve_starvation=0, scheduling_time_interval = self.scheduling_time_interval)
-                jct = scheduler.run()
-
-                if best_jct is None:  
-                    best_num_queue = num_queue 
-                    best_queue_limit = queue_limit
-                    best_jct = jct 
-                elif jct < best_jct * 0.95: 
-                    best_num_queue = num_queue 
-                    best_queue_limit = queue_limit
-                    best_jct = jct 
-                    
-
-            if best_num_queue != self.num_queue or best_queue_limit != self.queue_limit: 
-                # import pdb; pdb.set_trace() 
-                self.refactor_queue_info(best_num_queue, best_queue_limit)
-
-                
-    def refactor_queue_info(self, num_queue, queue_limit): 
-        self.set_queues(num_queue=num_queue, queue_limit=queue_limit)
-        for job in self.pending_jobs + self.running_jobs: 
-            job.queue_id = HIGH_QUEUE_PRIORITY 
-            self.queues[0].append(job)
-
-        for job in self.pending_jobs + self.running_jobs:
-            self.update_job_queue(job, service=job.attained_service, name='service')
-
 
     def run(self, ):
         cur_time = 0

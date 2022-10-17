@@ -1,13 +1,15 @@
 import os, sys
 import csv
+import ast 
 import yaml 
-from easydict import EasyDict
 import random 
 import numpy as np 
-from datetime import datetime
 import pandas as pd
-import ast 
-
+from datetime import datetime
+from easydict import EasyDict
+sys.path.insert(0, './')
+from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS 
+seed=42
 
 def time_check(time_info): 
     return time_info >= args.min_time and time_info <= args.max_time # 10 * 3600 * 1
@@ -100,75 +102,6 @@ def process_BM(filename):
             f.write('\n')
 
 
-def get_context_switch_overhead(placement, pipeline): 
-    placement2context_switch_overhead_no_pipeline = {
-            1 : 18,
-            2: 22,  
-            3: 29,  
-            4: 29, 
-            5: 29, 
-            6: 29, 
-            7: 29, 
-            8: 46, 
-        }
-    return placement2context_switch_overhead_no_pipeline[sum(placement)]
-
-
-def get_max_throughput(placement): 
-    if sum(placement) == 1: 
-        return 1 / 30.883228171955455
-    elif sum(placement) == 2: 
-        return 1 / 16.883228171955455
-    elif sum(placement) <= 4: 
-        return 1 / 9.52039733800021
-    elif sum(placement) <= 8: 
-        return 1 / 5.52039733800021
-    else:
-        raise NotImplementedError
-    
-
-def add_fm_info(sample): 
-    # model_types = [np.random.choice(['imagenet', 'cifar10','Oxford Flowers-102', 'Oxford-IIIT-Pets']) for _ in range(args.num_jobs)]
-    import string
-    import math 
-    job_choices = [string.ascii_uppercase[i] for i in range(args.fm_cluster)] 
-    job_types = [np.random.choice(job_choices) for _ in range(args.num_jobs)]
-    target_batch_list = list() 
-    data_scale_list = list() 
-    target_iteration_list = list() 
-    for idx, job_type in enumerate(job_types): 
-        duration = sample['duration'].iloc[idx]
-        num_gpus = sample['num_gpus'].iloc[idx]
-        phony_duration = duration - get_context_switch_overhead(placement=[num_gpus], pipeline=False)
-        target_batch_size = 512
-        # if num_gpus >= 4: 
-        #     target_batch_size = 512
-        # elif num_gpus >= 2: 
-        #     target_batch_size = 256
-        # elif num_gpus == 1: 
-        #     target_batch_size = 128 
-        # else:
-        #     raise NotImplementedError
-        
-        target_batch_list.append(target_batch_size)
-
-        phony_iteration = int(math.ceil(phony_duration * get_max_throughput([num_gpus]))) 
-        normalized_iteration = phony_iteration * (512 // target_batch_size)
-        data_scale = int(math.ceil(np.exp((normalized_iteration - args.p0) / args.p1)))
-        # data_scale = exp[(iter - p0) / p1]
-        # iter = p0 + p1 * np.log(data_scale)
-        
-
-        data_scale_list.append(data_scale)
-        target_iteration_list.append(phony_iteration)
-    # sample.drop(columns=['num_gpus'], inplace=True)
-    # sample.drop(columns=['duration'], inplace=True)
-    sample['application'] = job_types
-    sample['data_scale'] = data_scale_list 
-    sample['target_batch_size'] = target_batch_list
-    sample['target_iteration'] = target_iteration_list
-
-
 
 def add_ddl_time(sample):
     job_types = [np.random.choice(['best', 'soft', 'strict'], p = [args.best_effort, args.soft_SLO, args.strict_SLO]) for _ in range(args.num_jobs)]
@@ -233,43 +166,70 @@ def full_main():
         sample.set_index("name").to_csv('{}/{}.csv'.format(args.save_root, trace_name))
 
 
-def main(): 
-    mlaas_trace = parse_mlass('full_trace/MLaaS.csv')
-    philly_trace = parse_philly('full_trace/Philly.csv')
-    helios_trace = parse_helios('full_trace/Helios.csv')
-    bm_trace = parse_BM('full_trace/BM.csv')
-    rng = random.Random(args.seed)
-    for trace_name, trace in [('MLaas', mlaas_trace), ('Philly', philly_trace), ('Helios', helios_trace), ('BM', bm_trace)]: 
+def main(model, APPLICATIONS): 
+    # mlaas_trace = parse_mlass('full_trace/MLaaS.csv')
+    # philly_trace = parse_philly('full_trace/Philly.csv')
+    # helios_trace = parse_helios('full_trace/Helios.csv')
+    bm_trace = parse_BM('trace/full_trace/BM.csv')
+    rng = random.Random(seed)
+    rng2 = random.Random(seed + 3)
+    rng3 = random.Random(seed + 4)
+    job_rng = np.random.default_rng(seed)
+
+    for trace_name, trace in [('BM', bm_trace)]: 
         sample = trace.loc[(trace.duration >= args.min_time) & (trace.duration < args.max_time)]
         sample.insert(1, 'gpu_time', sample.num_gpus * sample.duration, True)
-        if args.gpu_limit: 
+        if hasattr(args, 'gpu_limit') and args.gpu_limit > 0: 
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, args.gpu_limit))
         else: 
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, 64))
         
         sample = sample.loc[sample.gpu_time < 100 * 3600]
+        sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
+        sample = sample.loc[sample.submission_time < 8 * 3600]
         if args.num_jobs > 0: 
             sample = sample.sample(n=args.num_jobs, random_state=rng.randint(0, 1 << 32))
-
-        sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
-        if args.add_ddl: 
-            add_ddl_time(sample)
-        
-        if args.add_fm: 
-            add_fm_info(sample)
-
-        sample.rename(columns = {'index':'name'}, inplace=True)
-        sample.rename(columns = {'index':'name'}, inplace=True)
-
         for key in ['submission_time', 'num_gpus', 'duration']: 
             if hasattr(sample, key): 
                 sample = sample.astype({key: 'int32'}) 
-        
-    
-        sample.drop(columns=['gpu_time'], inplace=True)
-        sample.set_index("name").to_csv('{}/{}.csv'.format(args.save_root, trace_name))
-        # print(trace_name, sample.groupby(["num_gpus"]).size())
+        records = list() 
+        application_list = [key for key in APPLICATIONS.keys()]
+        small_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'small']
+        medium_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'medium']
+        large_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'large']
+        xlarge_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'xlarge']
 
+        for row in sample.itertuples(): 
+            rec = {"submission_time": row.submission_time}
+
+            num_gpus = row.num_gpus
+            rec['application'] =application_list[0]
+            if row.gpu_time <= 1 * 3600:
+                rec["application"] = rng.choice(small_list)
+            elif row.gpu_time <= 10 * 3600:
+                rec["application"] = rng.choice(medium_list)
+            elif row.gpu_time < 100 * 3600:
+                rec["application"] = rng.choice(large_list)
+                subset = sample[sample.duration <= 24 * 3600]
+                subset = subset[subset.gpu_time >= 10 * 3600]
+                subset = subset[subset.gpu_time < 100 * 3600]
+                num_gpus = rng3.choice(subset.num_gpus.to_list())
+            else: 
+                rec["application"] = rng.choice[xlarge_list]
+                num_gpus = rng3.choice(subset.num_gpus.to_list()) 
+            
+            rec["num_gpus"] = num_gpus
+            rec["target_batch_size"] = APPLICATIONS[rec["application"]].target_batch_size
+            records.append(rec)
+
+        # sample.drop(columns=['gpu_time'], inplace=True)
+        # sample.set_index("name").to_csv('{}/{}.csv'.format(args.save_root, trace_name))
+        records.sort(key=lambda v: v["submission_time"])
+        for idx, rec in enumerate(records):
+            rec["name"] = "{}-{}".format(rec["application"], idx)
+    
+    return pd.DataFrame(records, columns=("name", "submission_time", "application",
+                                              "num_gpus", "target_batch_size"))
 
 def get_config_from_yaml(yaml_file):
     """
@@ -308,7 +268,9 @@ parser.add_argument('--add_norm',  default=False, type=ast.literal_eval, require
 parser.add_argument('--norm_yaml', default=None, type=str, required=False, help='norm configurations')
 parser.add_argument('--num_jobs', default=160, type=int, help='num jobs')
 parser.add_argument('--save_root', default=None, type=str, help='sample trace save path')
+parser.add_argument('--model', default=None, type=str, help='model name')
 parser.add_argument('--seed', default=-1, type=int, help='seed')
+parser.add_argument('--repeat_number', default=1, type=int, help='the number of repeat experiments')
 parser.add_argument('--full_trace', default=False, type=ast.literal_eval, help='whether extract all trace')
 args = parser.parse_args()
 
@@ -330,4 +292,16 @@ if __name__ == '__main__':
             args.save_root = os.path.join('./min-{}-max-{}-num-{}'.format(args.min_time, args.max_time, args.num_jobs if args.num_jobs > 0 else 'full'))
         if not os.path.exists(args.save_root): 
             os.makedirs(args.save_root) 
-        main()
+        
+        # for model in ['vit', 'vit-large', 'roberta-base', 'roberta-large']: 
+        for model_name in ['roberta-base']: 
+            APPLICATIONS = {} 
+            for task in FOUNDATIONMODELAPPLICATIONS.keys(): 
+                if model_name in task: 
+                    APPLICATIONS[task] = FOUNDATIONMODELAPPLICATIONS[task]
+            for repeat_id in range(args.repeat_number): 
+
+                workload = main(model_name, APPLICATIONS)
+                csv = workload.set_index("name").to_csv(os.path.join(args.save_root, 'workload-{}.csv'.format(repeat_id)))
+                print(workload.groupby(["application", "num_gpus", "target_batch_size"])
+                    .size().reset_index(name="count"))

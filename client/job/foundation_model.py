@@ -2,9 +2,8 @@ import math
 import numpy as np 
 from typing import Any, Iterable, List, Optional, Tuple, Union, Dict, cast
 import math 
-from client import application
-from client.application import FoundationModelApplication
-
+from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS
+import collections 
 from .base import BaseJob
 from .state import JobState
 
@@ -15,16 +14,56 @@ class FoundationModelJob(BaseJob):
     __alias__ = 'foundation_model' 
     def __init__(self, df): 
         super(FoundationModelJob, self).__init__(name=df.name, application=df.application, submission_time=df.submission_time)
-        self.target_iteration = df.target_iteration 
-        self.data_scale = df.data_scale 
+        self.target_num_gpus = df.num_gpus
         self.target_batch_size = df.target_batch_size
-        self.target_iteration = df.target_iteration 
-        self.application = FoundationModelApplication(df.application, self.data_scale, self.target_iteration)
+        self.application = FOUNDATIONMODELAPPLICATIONS[df.application]
+        self.min_num_gpus = 1
+        self.max_num_gpus = self.target_num_gpus
         self.elastic = True 
-        self.rescale_time = 0
+        
         self.placement = None 
         self.preemptible = True 
+        self.rescale_time = 0
+        self.max_progress = 10000
+        self.atomic_bsz = 0 
+        self.accum_steps = 0
     
+
+    def get_actual_loss_value(self, predict_progress):
+        normalized_progress = min(1, 1.0 * predict_progress / self.application.max_progress)
+        return 1000. / (1 + 0.25 * normalized_progress)
+    
+    def predict_loss(self, placement, step_interval=30): 
+        if isinstance(placement, int): 
+            num_gpus = placement
+            placement = [4 for _ in range(num_gpus // 4)]
+            if num_gpus % 4: placement.append(num_gpus % 4)
+            placement = tuple(placement)
+            assert sum(placement) == num_gpus
+        elif isinstance(placement, collections.Iterable): 
+            placcement = tuple([p for p in placement])
+        else: 
+            raise NotImplementedError
+        
+        if sum(placement) == 0: 
+            predict_progress = self.progress 
+        else:
+            predict_progress = self.progress + self.application.get_throughput(placement=placement, local_bsz=1) * step_interval
+
+        return self.get_actual_loss_value(predict_progress)
+
+
+
+    def update_local_bsz(self, placement):
+        app = self.application
+        placement = tuple(filter(None, placement))
+        num_nodes, num_replicas = len(placement), sum(placement)
+        batch_size = self.target_batch_size 
+        local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
+        self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
+        self.atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
+        count = num_replicas * (self.accum_steps + 1)
+        self.atomic_bsz = min(self.atomic_bsz, int(app.max_batch_size / count))
 
     def step(self, seconds, **kwargs):
         if not self.placement:
@@ -35,19 +74,24 @@ class FoundationModelJob(BaseJob):
                 self.pending_time += seconds 
             self.staying_time += seconds 
             return
-
+        
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
 
         self.status = JobState.RUNNING
-        if abs(self.progress - self.application.max_progress) > 0.1: 
+        if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
-            iteration_per_time = self.application.get_throughput(placement, self.target_batch_size)
-            delta_progress = min(seconds * iteration_per_time, self.application.max_progress - self.progress) 
-            delta_seconds = round(float(delta_progress / iteration_per_time)) 
+            self.update_local_bsz(placement) 
+            
+            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+            accum_time = step_time - sync_time
+            total_time = step_time + accum_time * self.accum_steps
+
+            delta_progress = min(seconds / total_time, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress * total_time)) 
             self.progress += delta_progress
-            if abs(self.progress - self.application.max_progress) <= 0.1: 
+            if abs(self.progress - self.max_progress) <= 0.1: 
                 self.completion_time = self.staying_time + delta_seconds + self.submission_time 
             self.attained_service += delta_seconds * sum(placement) 
         
@@ -120,7 +164,7 @@ class MergeFoundationModelJob(BaseJob):
                 self.pending_time += seconds 
             self.staying_time += seconds 
             return
-
+        print(self.rescale_time, seconds)
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
