@@ -22,7 +22,7 @@ class ThemisScheduler(BaseScheduler):
         self.event_jobs = job_manager.event_jobs
         self.completion_jobs = list()
         self.scheduling_time_interval = kwargs.get('scheduling_time_interval', 10)
-        self.lease_term_interval = kwargs.get('lease_term_interval', 900)
+        self.lease_term_interval = kwargs.get('lease_term_interval', 300)
         self.save_dir = kwargs.get('save_dir', 'result/')
     
 
@@ -84,7 +84,7 @@ class ThemisScheduler(BaseScheduler):
         if job.deserved_service == 0: 
             return 1 
 
-        t_remaining = job.application.max_progress - job.progress  
+        t_remaining = job.max_progress - job.progress  
         t_isolated = job.progress   * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
         return job.staying_time / (t_isolated + t_remaining)
 

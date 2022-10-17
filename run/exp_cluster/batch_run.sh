@@ -6,20 +6,25 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=12 --ntasks=1 -w SG-IDC1-10-
 
 for root in  'trace/'
 do 
-    for trace in FM-160-roberta-base
+    match="FM-"
+    # for trace in `{ls $root/FM-* `
+    for trace in `ls trace/`
     do  
-        echo $trace
-        num_node_p_switch=16
-        num_gpu_p_node=4
+        if [[ "$trace" == *"$match"*  ]]; then 
+            echo $trace 
+            num_node_p_switch=16
+            num_gpu_p_node=4
 
-        for schedule in titan # chockwave optimus tiresias titan srtf 
-        do 
-            job_type="foundation_model"
-            $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
-                        --save_log_dir=result/$schedule/$trace --ident=$schedule_$trace \
-                        --placement=consolidate --num_node_p_switch=$num_node_p_switch \
-                        --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=300 --job_type=$job_type 
-        done
+            for schedule in  themis optimus tiresias srtf # titan # chockwave optimus tiresias titan srtf 
+            do 
+                job_type="foundation_model"
+                $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
+                            --save_log_dir=result/$schedule/$trace --ident=$schedule_$trace \
+                            --placement=consolidate --num_node_p_switch=$num_node_p_switch \
+                            --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=300 --job_type=$job_type 
+            done
+        fi
+        
     done
 done 
 

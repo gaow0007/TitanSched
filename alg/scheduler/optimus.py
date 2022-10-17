@@ -104,7 +104,7 @@ class OptimusScheduler(BaseScheduler):
         runnable_jobs = self.running_jobs + self.pending_jobs
         if len(runnable_jobs) == 0:
             return 
-        runnable_jobs.sort(key=lambda job:job.application.min_num_gpus)
+        runnable_jobs.sort(key=lambda job:job.min_num_gpus)
 
         # init
         should_run_jobs = list() 
@@ -114,7 +114,7 @@ class OptimusScheduler(BaseScheduler):
         num_replicas = [0 for job in runnable_jobs]
         gains = [0 for job in runnable_jobs]
 
-        if True: 
+        if False: 
             # sort jobs and assgin gpus
             for job_idx, job in enumerate(runnable_jobs): 
                 # if min_replicas[job_idx] > total_num_gpu: 
@@ -126,13 +126,13 @@ class OptimusScheduler(BaseScheduler):
                 job_idx = np.argmax(gains)
                 num_replicas[job_idx] += 1
                 total_num_gpu -= 1
-                if num_replicas[job_idx] + 1 > job.application.max_num_gpus: 
+                if num_replicas[job_idx] + 1 > job.max_num_gpus: 
                     gains[job_idx] = 0
                     continue 
                 
                 gains[job_idx] = job.predict_loss(num_replicas[job_idx]) - job.predict_loss(num_replicas[job_idx] + 1)
         else: 
-            min_replicas = [job.application.min_num_gpus for job in runnable_jobs]
+            min_replicas = [job.min_num_gpus for job in runnable_jobs]
             # sort jobs and assgin gpus
             for job_idx, job in enumerate(runnable_jobs): 
                 if min_replicas[job_idx] > total_num_gpu: 
@@ -144,7 +144,7 @@ class OptimusScheduler(BaseScheduler):
                 job_idx = np.argmax(gains)
                 num_replicas[job_idx] += 1
                 total_num_gpu -= 1
-                if num_replicas[job_idx] + 1 > job.application.max_num_gpus: 
+                if num_replicas[job_idx] + 1 > job.max_num_gpus: 
                     gains[job_idx] = 0
                     continue 
                 

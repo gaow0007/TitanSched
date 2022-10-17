@@ -9,7 +9,7 @@ node=76
 prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
 
 config=FM
-for density in 160 # 320 480 720
+for density in 160 320 480 720
 do 
     for model in roberta-base # roberta-large vit vit-large
     do

@@ -115,7 +115,7 @@ class ShortestRemainingTimeFirstScheduler(BaseScheduler):
                 self.runnable_jobs.append(job) 
                 total_resource_count += job.target_num_gpus
 
-        self.runnable_jobs.sort(key=lambda e: (e.application.max_progress - e.progress, e.submission_time))
+        self.runnable_jobs.sort(key=lambda e: (e.max_progress - e.progress, e.submission_time))
         
         # 2. select which jobs to run or preempty
         

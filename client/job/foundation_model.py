@@ -24,13 +24,13 @@ class FoundationModelJob(BaseJob):
         self.placement = None 
         self.preemptible = True 
         self.rescale_time = 0
-        self.max_progress = 10000
+        self.max_progress = 5000
         self.atomic_bsz = 0 
         self.accum_steps = 0
     
 
     def get_actual_loss_value(self, predict_progress):
-        normalized_progress = min(1, 1.0 * predict_progress / self.application.max_progress)
+        normalized_progress = min(1, 1.0 * predict_progress / self.max_progress)
         return 1000. / (1 + 0.25 * normalized_progress)
     
     def predict_loss(self, placement, step_interval=30): 
@@ -48,10 +48,34 @@ class FoundationModelJob(BaseJob):
         if sum(placement) == 0: 
             predict_progress = self.progress 
         else:
-            predict_progress = self.progress + self.application.get_throughput(placement=placement, local_bsz=1) * step_interval
+            step_time = self.application.get_throughput(placement=placement, local_bsz=self.application.min_local_bsz) 
+            if isinstance(step_time, (tuple, np.ndarray)): 
+                step_time = step_time[0]
+            throughput = 1. / step_time 
+            predict_progress = self.progress + throughput * step_interval
 
         return self.get_actual_loss_value(predict_progress)
 
+    def predict_remaining_time(self, placement): 
+        if isinstance(placement, int): 
+            num_gpus = placement
+            placement = [4 for _ in range(num_gpus // 4)]
+            if num_gpus % 4: placement.append(num_gpus % 4)
+            placement = tuple(placement)
+            assert sum(placement) == num_gpus
+        elif isinstance(placement, collections.Iterable): 
+            placcement = tuple([p for p in placement])
+        else: 
+            raise NotImplementedError
+        
+        self.update_local_bsz(placement)
+        step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+        accum_time = step_time - sync_time
+        total_time = step_time + accum_time * self.accum_steps
+
+        delta_progress = self.max_progress - self.progress
+        delta_seconds = round(float(delta_progress * total_time)) 
+        return delta_seconds
 
 
     def update_local_bsz(self, placement):
@@ -164,7 +188,7 @@ class MergeFoundationModelJob(BaseJob):
                 self.pending_time += seconds 
             self.staying_time += seconds 
             return
-        print(self.rescale_time, seconds)
+        
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 

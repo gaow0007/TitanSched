@@ -187,9 +187,7 @@ def main(opt, logger):
                                         lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
     elif opt.schedule == 'tiresias':
         num_queue = opt.num_queue
-        service_list = sorted([job.target_num_gpus * job.target_duration for job in job_manager.job_list])
-        import pdb; pdb.set_trace() 
-        queue_limit = np.percentile(service_list, [1.0 * i / num_queue * 100 for i in range(1, num_queue+1)])
+        queue_limit = [3600, 1000 * 3600]
         scheduler = TiresiasScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, num_queue=num_queue, queue_limit=queue_limit, \
                                         solve_starvation=0, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir)

@@ -185,8 +185,9 @@ def main(model, APPLICATIONS):
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, 64))
         
         sample = sample.loc[sample.gpu_time < 100 * 3600]
-        sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
-        sample = sample.loc[sample.submission_time < 8 * 3600]
+        sample.submission_time = sample.submission_time.apply(lambda st : st % (8 * 60 * 60))
+        # sample = sample.loc[sample.submission_time < 8 * 3600]
+        # import pdb; pdb.set_trace() 
         if args.num_jobs > 0: 
             sample = sample.sample(n=args.num_jobs, random_state=rng.randint(0, 1 << 32))
         for key in ['submission_time', 'num_gpus', 'duration']: 
@@ -219,7 +220,7 @@ def main(model, APPLICATIONS):
                 num_gpus = rng3.choice(subset.num_gpus.to_list()) 
             
             rec["num_gpus"] = num_gpus
-            rec["target_batch_size"] = APPLICATIONS[rec["application"]].target_batch_size
+            rec["target_batch_size"] = APPLICATIONS[rec["application"]].max_batch_size
             records.append(rec)
 
         # sample.drop(columns=['gpu_time'], inplace=True)

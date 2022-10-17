@@ -113,7 +113,6 @@ class FoundationModelApplication(object):
         self.fm_speed.memory_consumption[local_bsz]
 
     def get_throughput(self, placement, local_bsz):
-        print(placement, local_bsz)
         return self.fm_speed.get_throughput(placement, local_bsz) 
     
     def get_completion_epoch(self, batch_size, lr, target_metric):
