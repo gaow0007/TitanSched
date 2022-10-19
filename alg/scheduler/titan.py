@@ -28,7 +28,7 @@ class TitanScheduler(BaseScheduler):
     
 
     def finish_all_jobs(self, ): 
-        # print('event {}, pending {}, running {}'.format(len(self.event_jobs), len(self.pending_jobs), len(self.running_jobs)))
+        self.logger.info('event {}, pending {}, running {}'.format(len(self.event_jobs), len(self.pending_jobs), len(self.running_jobs)))
         return len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) == 0
     
 
@@ -147,7 +147,8 @@ class TitanScheduler(BaseScheduler):
             runnable_jobs = sorted(runnable_jobs, key=lambda job: (job.application.name, job.application.data_scale)) 
 
         total_gpu_num = self.cluster_manager.check_total_gpus() 
-        candidate_gpus = [1, 2, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+        max_allocated_gpu_num = 32
+        candidate_gpus = [1, 2, 4] + [4 * i for i in range(2, max_allocated_gpu_num // 4 + 1)]
         for idx, job in enumerate(runnable_jobs):
             for gpu_num in candidate_gpus: 
                 if gpu_num <= 4: 
@@ -161,7 +162,7 @@ class TitanScheduler(BaseScheduler):
                     step_time = step_time[0]
                 
                 weight = 32. * gpu_num / step_time / (job.max_progress - job.progress)
-                print(job.max_progress, job.progress, weight)
+                print('max_progress', job.max_progress, job.progress, weight)
                 if np.isinf(weight) or np.isnan(weight): 
                     required_resource_list.append(gpu_num)
                     weight_per_allocation_list.append(0.1)
@@ -220,16 +221,20 @@ class TitanScheduler(BaseScheduler):
             should_run_jobs = should_run_jobs + should_run_merge_jobs
             
         else:
-            # if len(self.running_jobs) + len(self.pending_jobs) > 10: 
-            #     import pdb; pdb.set_trace()  
+
             if len(weight_per_allocation_list) > 0 and min(weight_per_allocation_list) < 1e-2: 
                 normalized_weight = min(weight_per_allocation_list) / 1e-2
                 weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
             
-            solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, cluster_capacity, max_seconds=5)
+            # if len(self.running_jobs) + len(self.pending_jobs) > 10: 
+            #     import pdb; pdb.set_trace()  
+            
+            solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, cluster_capacity, max_seconds=30)
             # if len(self.running_jobs) + len(self.pending_jobs) > 3 and sum(solution) < 10: 
             #     import pdb; pdb.set_trace() 
-            # self.logger.info('solution == {}'.format(solution))
+            self.logger.info('solution == {}'.format(solution))
+            if len(self.pending_jobs) >= 20 and len(self.running_jobs) == 0 and sum(solution) == 0: 
+                import pdb; pdb.set_trace() 
             should_run_jobs = list() 
             for idx, job in enumerate(runnable_jobs): 
                 if job.status == JobState.RUNNING: 

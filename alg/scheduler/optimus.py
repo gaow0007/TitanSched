@@ -56,6 +56,7 @@ class OptimusScheduler(BaseScheduler):
     
     def execute_start_job(self, start_job, cur_time):
         self.pending_jobs.append(start_job)
+        start_job.target_num_gpus = 0 
         start_job.status = JobState.PENDING
         self.logger.info('---- job[{}] is added  at time[{}]'.format(start_job.name, cur_time))
 
@@ -139,7 +140,8 @@ class OptimusScheduler(BaseScheduler):
                     continue 
                 num_replicas[job_idx] = min_replicas[job_idx]
                 gains[job_idx] = job.predict_remaining_time(num_replicas[job_idx]) - job.predict_remaining_time(num_replicas[job_idx] + 1)
-            
+
+
             while total_num_gpu > 0 and max(gains) > 0: 
                 job_idx = np.argmax(gains)
                 num_replicas[job_idx] += 1
