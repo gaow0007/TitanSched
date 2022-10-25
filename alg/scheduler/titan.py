@@ -154,8 +154,23 @@ class TitanScheduler(BaseScheduler):
 
         total_gpu_num = self.cluster_manager.check_total_gpus() 
         max_allocated_gpu_num = 32
-        candidate_gpus = [0, 1, 2, 4] + [4 * i for i in range(2, max_allocated_gpu_num // 4 + 1)]
-        # candidate_gpus = [i for i in range(1, total_gpu_num + 1)]
+        # candidate_gpus = [i for i in range(0, total_gpu_num + 1)]
+        candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+        if not self.multi_task_adaptivity: 
+            runnable_jobs = sorted(runnable_jobs, key=lambda job: job.predict_remaining_time(1))
+            if len(runnable_jobs) > total_gpu_num: 
+                for job in runnable_jobs[total_gpu_num:]: 
+                    if job.status == JobState.RUNNING: 
+                        self.execute_preempt(job, cur_time)
+                        if job in self.running_jobs: 
+                            self.running_jobs.remove(job)
+                        if job not in self.pending_jobs: 
+                            self.pending_jobs.append(job)
+                        
+                runnable_jobs = runnable_jobs[:total_gpu_num]
+                
+            
+
 
         if len(runnable_jobs) > 0: 
             fair_placement = max(1, int(total_gpu_num / len(runnable_jobs)))
@@ -163,12 +178,10 @@ class TitanScheduler(BaseScheduler):
         for idx, job in enumerate(runnable_jobs):
 
             fair_remaining_time = max(job.predict_remaining_time(min(fair_placement, job.max_num_gpus)), self.scheduling_time_interval)
-            # import pdb; pdb.set_trace() 
-            # candidate_gpus = [job.max_num_gpus]
             for gpu_num in candidate_gpus: 
                 if gpu_num == 0: 
                     required_resource_list.append(gpu_num)
-                    weight_per_allocation_list.append(1e-5)
+                    weight_per_allocation_list.append(1e-4)
                     equalivent_allocation_list.append(idx)
                     continue 
                 
@@ -198,7 +211,7 @@ class TitanScheduler(BaseScheduler):
                 # print('max_progress', job.max_progress, job.progress, weight)
                 if np.isinf(weight) or np.isnan(weight): 
                     required_resource_list.append(gpu_num)
-                    weight_per_allocation_list.append(1e-5)
+                    weight_per_allocation_list.append(1e-4)
                     equalivent_allocation_list.append(idx)
                     continue 
                 
@@ -254,22 +267,28 @@ class TitanScheduler(BaseScheduler):
             should_run_jobs = should_run_jobs + should_run_merge_jobs
             
         else:
-
-            if len(weight_per_allocation_list) > 0 and min(weight_per_allocation_list) < 1e-2: 
-                normalized_weight = min(weight_per_allocation_list) / 1e-2
-                print(normalized_weight)
-                if normalized_weight == 0: 
-                    import pdb; pdb.set_trace() 
-                weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
+            
+            power = -1
+            if power < 0: 
+                if len(weight_per_allocation_list) > 0 and max(weight_per_allocation_list) > 10000: 
+                    normalized_weight = max(weight_per_allocation_list) / 100 
+                    weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
+            else: 
+                if len(weight_per_allocation_list) > 0 and min(weight_per_allocation_list) < 1e-2: 
+                    normalized_weight = min(weight_per_allocation_list) / 1e-2
+                    if normalized_weight == 0: 
+                        import pdb; pdb.set_trace() 
+                    weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
             
             # if len(self.running_jobs) + len(self.pending_jobs) > 10: 
             #     import pdb; pdb.set_trace()  
-            power = -1
+            
             solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, \
                                                         equalivent_allocation_list, unique_job_num, cluster_capacity, \
                                                         max_seconds=30, power=power)
-            # if len(self.running_jobs) + len(self.pending_jobs) > 3 and sum(solution) < 10: 
+            # if len(self.running_jobs) + len(self.pending_jobs) > 30 and sum(solution) < 10: 
             #     import pdb; pdb.set_trace() 
+            # power_list = [(weight_per_allocation_list[i] ** power) for i in range(len(weight_per_allocation_list))]
             self.logger.info('solution == {}'.format(solution))
             if len(self.pending_jobs) >= 20 and len(self.running_jobs) == 0 and sum(solution) == 0: 
                 import pdb; pdb.set_trace() 
@@ -283,6 +302,9 @@ class TitanScheduler(BaseScheduler):
                         self.execute_preempt(job, cur_time)
                         if job in self.running_jobs: 
                             self.running_jobs.remove(job)
+                        
+                        if job not in self.pending_jobs: 
+                            self.pending_jobs.append(job)
 
                     if solution[idx] > 0: 
                         if job.target_num_gpus != solution[idx]: 

@@ -91,13 +91,14 @@ class ThemisScheduler(BaseScheduler):
 
     def update_job_fairness(self, prev_time, cur_time): 
         total_job_num = len(self.pending_jobs) + len(self.running_jobs)
-        weighted_share = 1.0 / (total_job_num + 1e-3)
+        total_gpu_request = sum([job.target_num_gpus for job in (self.pending_jobs + self.running_jobs)])
+        weighted_share = self.cluster_manager.check_total_gpus() / (total_gpu_request + 1e-3)
         for job in self.pending_jobs + self.running_jobs: 
             interval = cur_time - max(prev_time, job.submission_time)
-            if not hasattr(job, 'derserved_service'): 
+            if not hasattr(job, 'deserved_service'): 
                 job.deserved_service = 0 
 
-            job.deserved_service += min(weighted_share, job.target_num_gpus) * interval 
+            job.deserved_service += min(weighted_share * job.target_num_gpus, job.target_num_gpus) * interval 
 
 
     def flush_event_jobs(self, prev_time, cur_time):
@@ -124,6 +125,7 @@ class ThemisScheduler(BaseScheduler):
             if job.completion_time is not None: 
                 assert self.release_job_resource(job) == True 
                 job.status = JobState.END
+                job.finish_time_fairness = self.get_finish_time_fairness(job)
                 self.completion_jobs.append(job)
                 need_remove_jobs.append(job)
                 self.completion_jobs.append(job)

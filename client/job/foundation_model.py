@@ -12,7 +12,7 @@ from .state import JobState
 
 class FoundationModelJob(BaseJob): 
     __alias__ = 'foundation_model' 
-    def __init__(self, df): 
+    def __init__(self, df, **kwargs): 
         super(FoundationModelJob, self).__init__(name=df.name, application=df.application, submission_time=df.submission_time)
         self.target_num_gpus = df.num_gpus
         self.target_batch_size = df.target_batch_size
@@ -23,10 +23,11 @@ class FoundationModelJob(BaseJob):
         
         self.placement = None 
         self.preemptible = True 
-        self.rescale_time = self.application.get_context_switch_overhead(1, pipeline=False)
         self.max_progress = self.application.progress_per_epoch  * 10 # * self.get_completion_epoch()
         self.atomic_bsz = 0 
         self.accum_steps = 0
+        self.add_ckpt = kwargs.get('add_ckpt', 0)
+        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(1, pipeline=False)
     
 
     def get_actual_loss_value(self, predict_progress):
@@ -222,9 +223,9 @@ class MergeFoundationModelJob(BaseJob):
                 self.num_restarts += 1
             kwargs['pipeline'] = False
             if kwargs.get('pipeline', False): 
-                self.rescale_time = self.application.get_context_switch_overhead(self.placement, pipeline=True)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=True)
             else: 
-                self.rescale_time = self.application.get_context_switch_overhead(self.placement, pipeline=False)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
 
         else:  # De-allocate all resources.
             self.placement = ()

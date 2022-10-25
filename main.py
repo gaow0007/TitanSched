@@ -31,13 +31,15 @@ from utils.logger import getLogger
 def prepare_job_manager(): 
     return JobManager() 
 
-def parse_job_file(filename, job_type, job_manager): 
+def parse_job_file(filename, job_type, job_manager, opt): 
     df = pd.DataFrame(pd.read_csv(filename)).dropna() 
     for idx, row in df.iterrows(): 
         row.name = row[0] # TODO
         if job_type == 'base': 
             job_instance = JobFactory(name=job_type)(name=row.name, submission_time=row.submission_time,\
                                                 target_duration=row.duration, target_num_replicas=row.num_gpus, target_gpus_per_replica=1)
+        elif job_type == 'foundation_model': 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt) 
         else: 
             job_instance = JobFactory(name=job_type)(row) 
         
@@ -167,7 +169,7 @@ def main(opt, logger):
     cluster_manager = prepare_cluster(opt)
     job_manager = prepare_job_manager() 
     user_manager = None 
-    parse_job_file(filename=opt.trace, job_type=opt.job_type, job_manager=job_manager)
+    parse_job_file(filename=opt.trace, job_type=opt.job_type, job_manager=job_manager, opt=opt)
     
     global PM
     PM = PlaceMentFactory(cluster_manager=cluster_manager, name=opt.placement) # construct placement after init cluster

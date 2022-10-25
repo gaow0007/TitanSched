@@ -123,7 +123,7 @@ class FoundationModelApplication(object):
 
     
     def get_context_switch_overhead(self, placement, pipeline): 
-        return self.fm_speed.get_context_switch_overhead(placement, pipeline) + 30
+        return self.fm_speed.get_context_switch_overhead(placement, pipeline)
     
     def get_memory_consumption(self, local_bsz): 
         self.fm_speed.memory_consumption[local_bsz]
