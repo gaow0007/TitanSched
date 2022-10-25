@@ -9,14 +9,14 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/`
-    # for trace in FM-160-roberta-base
+    # for trace in FM-320-roberta-base
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
-            num_node_p_switch=16
+            num_node_p_switch=8
             num_gpu_p_node=4
 
-            for schedule in  titan # optimus tiresias srtf # titan # titan # chockwave optimus tiresias titan srtf 
+            for schedule in titan optimus srtf tiresias # optimus # srtf # optimus tiresias srtf # titan # titan # chockwave optimus tiresias titan srtf 
             do 
                 extra_cmd=""
                 if [[ $schedle == "titan" ]] ;

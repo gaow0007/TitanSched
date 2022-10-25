@@ -18,13 +18,13 @@ class FoundationModelJob(BaseJob):
         self.target_batch_size = df.target_batch_size
         self.application = FOUNDATIONMODELAPPLICATIONS[df.application]
         self.min_num_gpus = 1
-        self.max_num_gpus = self.target_num_gpus
+        self.max_num_gpus = self.target_num_gpus * 4
         self.elastic = True 
         
         self.placement = None 
         self.preemptible = True 
-        self.rescale_time = 0
-        self.max_progress = 5000
+        self.rescale_time = self.application.get_context_switch_overhead(1, pipeline=False)
+        self.max_progress = self.application.progress_per_epoch  * 10 # * self.get_completion_epoch()
         self.atomic_bsz = 0 
         self.accum_steps = 0
     
@@ -71,10 +71,10 @@ class FoundationModelJob(BaseJob):
         self.update_local_bsz(placement)
         step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
         accum_time = step_time - sync_time
-        total_time = step_time + accum_time * self.accum_steps
-
+        total_time = step_time + accum_time * (self.accum_steps + 1)
+        total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
         delta_progress = self.max_progress - self.progress
-        delta_seconds = round(float(delta_progress * total_time)) 
+        delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
         return delta_seconds
 
 
@@ -111,9 +111,10 @@ class FoundationModelJob(BaseJob):
             step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
             accum_time = step_time - sync_time
             total_time = step_time + accum_time * self.accum_steps
+            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
 
-            delta_progress = min(seconds / total_time, self.max_progress - self.progress) 
-            delta_seconds = round(float(delta_progress * total_time)) 
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
             self.progress += delta_progress
             if abs(self.progress - self.max_progress) <= 0.1: 
                 self.completion_time = self.staying_time + delta_seconds + self.submission_time 
@@ -174,7 +175,7 @@ class MergeFoundationModelJob(BaseJob):
         self.application = FoundationModelApplication(FM.application.name, self.data_scale, self.target_iteration)
 
         self.elastic = True 
-        self.rescale_time = 0
+        self.rescale_time = self.application.get_context_switch_overhead(1, pipeline=False)
         self.placement = None 
         self.preemptible = True 
     

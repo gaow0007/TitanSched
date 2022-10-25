@@ -102,13 +102,18 @@ class TitanSolver(object):
     def __init__(self, method):
         self.method = method
 
-    def job_selection(self, required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, cluster_capacity, max_seconds=1): 
+    def job_selection(self, required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, cluster_capacity, max_seconds=1, power=1): 
 
         m = Model(solver_name = CBC)
         var_len = len(required_resource_list)
         X = [m.add_var(var_type=BINARY) for i in range(var_len)]
-        obj_list = [X[i] * weight_per_allocation_list[i] for i in range(var_len)]
-        m.objective = maximize(xsum(obj_list[i] for i in range(len(obj_list)))) 
+        obj_list = [X[i] * (weight_per_allocation_list[i] ** power) for i in range(var_len)]
+
+        if power > 0: 
+            m.objective = maximize(xsum(obj_list[i] for i in range(len(obj_list)))) 
+        else: 
+            m.objective = minimize(xsum(obj_list[i] for i in range(len(obj_list)))) 
+
         m += xsum(X[i] * required_resource_list[i] for i in range(var_len)) <= cluster_capacity
         left, right = 0, 0
         left_list, right_list = list(), list() 
@@ -118,7 +123,7 @@ class TitanSolver(object):
                     right = j 
                     break 
             if equalivent_allocation_list[j] == i: right = j + 1
-            m += xsum(X[j] for j in range(left, right)) <= 1
+            m += xsum(X[j] for j in range(left, right)) == 1
             left_list.append(left) 
             right_list.append(right)
             left = right 

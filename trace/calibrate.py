@@ -182,7 +182,7 @@ def main(model, APPLICATIONS):
         if hasattr(args, 'gpu_limit') and args.gpu_limit > 0: 
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, args.gpu_limit))
         else: 
-            sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, 64))
+            sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, 32))
         
         sample = sample.loc[sample.gpu_time < 100 * 3600]
         sample.submission_time = sample.submission_time.apply(lambda st : st % (8 * 60 * 60))

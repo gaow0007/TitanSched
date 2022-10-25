@@ -91,6 +91,20 @@ FOUNDATIONMODELSPEEDS = {
 
 
 # //////////////////////////////////////////////////////////////////////////////////////////////////////
+TaskScale = {
+    'wnli' : 159,
+    'rte' : 623,
+    'mrpc' : 917,
+    'stsb' : 1438,
+    'sst2' : 16838,
+    'qnli' : 26186,
+    'qqp' : 90962,
+    'mnli' : 98176,
+    'snli' : 137344,
+    'ag_news' : 30000,
+    'wikitext-103':59061,
+}
+
 class FoundationModelApplication(object): 
     def __init__(self, trace_dir, scale): 
         self.name = os.path.basename(trace_dir)
@@ -98,16 +112,18 @@ class FoundationModelApplication(object):
         self.model_name = self.name.split('@')[0]
         self.task_name = self.name.split('@')[1]
         
+        # speed-related 
         self.fm_speed = FOUNDATIONMODELSPEEDS[self.model_name]
         self.max_local_bsz = self.fm_speed.placements.local_bsz.max() 
         self.min_local_bsz = self.fm_speed.placements.local_bsz.min() 
         self.metric_key = get_standarized_metric(self.task_name)
+        self.progress_per_epoch = TaskScale[self.task_name]
         self.max_epochs = 10
-        self.max_batch_size = 1024
+        self.max_batch_size = 256
 
     
     def get_context_switch_overhead(self, placement, pipeline): 
-        return self.fm_speed.get_context_switch_overhead(placement, pipeline)
+        return self.fm_speed.get_context_switch_overhead(placement, pipeline) + 30
     
     def get_memory_consumption(self, local_bsz): 
         self.fm_speed.memory_consumption[local_bsz]

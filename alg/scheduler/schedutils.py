@@ -11,8 +11,13 @@ MAX_SEARCH_JOB = 10000
 
 
 def schedule_summary(sched):
+    len(sched.completion_jobs)
+    for job in sched.job_manager.job_list: 
+        if job.status != JobState.END: 
+            import pdb; pdb.set_trace() 
+
     assert all([job.status == JobState.END for job in sched.job_manager.job_list])
-    attribute_list = ['name', 'submission_time', 'pending_time', 'staying_time', 'completion_time', 'num_restarts']
+    attribute_list = ['name', 'submission_time', 'pending_time', 'staying_time', 'completion_time', 'num_restarts', 'max_progress', 'target_num_gpus']
         
     with open(os.path.join(sched.save_dir, sched.name + '.csv'), 'w') as f:
         print(",".join(attribute_list), file=f)

@@ -110,10 +110,10 @@ class ShortestRemainingTimeFirstScheduler(BaseScheduler):
         # 1. sorted by shortest remaining time 
         self.runnable_jobs = [job for job in self.pending_jobs] # need enumerate, watch out shallow copy and deep copy 
         total_resource_count = self.cluster_manager.check_free_gpus()
-        for job in self.running_jobs: 
-            if hasattr(job, 'preemptible') and job.preemptible: 
-                self.runnable_jobs.append(job) 
-                total_resource_count += job.target_num_gpus
+        # for job in self.running_jobs: 
+        #     if hasattr(job, 'preemptible') and job.preemptible: 
+        #         self.runnable_jobs.append(job) 
+        #         total_resource_count += job.target_num_gpus
 
         self.runnable_jobs.sort(key=lambda e: (e.max_progress - e.progress, e.submission_time))
         

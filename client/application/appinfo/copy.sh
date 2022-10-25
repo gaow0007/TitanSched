@@ -1,0 +1,1 @@
+cp ../unify-parameter-efficient-tuning/exps/speed_collection/fminfo/* client/application/appinfo/fminfo/
