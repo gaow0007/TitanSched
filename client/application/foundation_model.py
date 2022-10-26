@@ -151,7 +151,7 @@ class FoundationModelApplication(object):
         self.metric_key = FMStats.hpo_info.standarized_metric(self.task_name)
         self.progress_per_epoch = TaskScale[self.task_name]
         self.max_epochs = 10
-        self.max_batch_size = 256
+        self.max_batch_size = 1024
 
     
     def get_context_switch_overhead(self, placement, pipeline): 
@@ -163,13 +163,36 @@ class FoundationModelApplication(object):
     def get_throughput(self, placement, local_bsz):
         return self.fm_speed.get_throughput(placement, local_bsz) 
     
-    def get_completion_epoch(self, lr, gradient_steps, target_metric):
-        performance_traj =  FMStats.hpo_info.performance_report[self.model_name][self.task_name][lr][gradient_steps]
-        for epoch in range(self.max_epochs): 
-            metric = performance_traj[self.metric_key][epoch]
-            if metric >= target_metric: 
-                return epoch + 1
-        return self.max_epochs
+    def get_completion_epoch(self,  **kwargs):
+        target_metric = kwargs.get('target_metric')
+        assert target_metric is not None 
+        if kwargs.get('transfer') == True: 
+            insert_key = FMStats.transfer_info.generate_dataset_key(kwargs.get('datasetX'), kwargs.get('datasetY'))
+            performance_traj = FMStats.transfer_info.performance_report[self.model_name][insert_key] 
+            metric_info = performance_traj[self.metric_key]
+            epoch_info = performance_traj[self.metric_key + '_epoch']
+        elif kwargs.get('mtask') == True: 
+            insert_key = FMStats.mtask_info.generate_dataset_key(kwargs.get('datasetX'), kwargs.get('datasetY'))
+            performance_traj = FMStats.transfer_info.performance_report[self.model_name][insert_key] 
+            metric_key = '{}_{}'.format(self.task_name, self.metric_key)
+            metric_info = performance_traj[metric_key]
+            epoch_info = performance_traj[metric_key + '_epoch']
+        else: 
+            lr = kwargs.get('lr')
+            gradient_steps = kwargs.get('gradient_steps')
+            performance_traj =  FMStats.hpo_info.performance_report[self.model_name][self.task_name][lr][gradient_steps]
+            metric_info = performance_traj[self.metric_key]
+            epoch_info = performance_traj[self.metric_key + '_epoch']
+
+        min_epoch = None 
+        for epoch, metric in zip(epoch_info, metric_info): 
+            if target_metric <= metric: 
+                if min_epoch is None: 
+                    min_epoch = epoch 
+                else: 
+                    min_epoch = min(epoch, min_epoch)
+        
+        return self.max_epochs if min_epoch is None else min_epoch
     
 
 

@@ -11,7 +11,7 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 config=FM
 for density in 160 320 480 720
 do 
-    for model in roberta-base # roberta-base roberta-large vit vit-large
+    for model in roberta-base roberta-large vit vit-large
     do
         add_metric=True
         $prefix python -u trace/calibrate.py --min_time=300 --max_time=36000 --model=$model --num_jobs=$density --add_metric=$add_metric --add_ddl=False --add_user=False --add_job_name=False --add_fm=False --add_norm=False --repeat_number=1 --save_root=trace/FM-$density-$model/ 

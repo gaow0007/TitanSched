@@ -30,12 +30,11 @@ class FoundationModelJob(BaseJob):
         if hasattr(df, 'target_metric'): 
             self.target_gradient_steps = df.target_gradient_steps
             self.target_lr = df.target_lr
-            self.target_metric = df.target_metric 
-            # 1.936880 for 480 jobs
+            self.target_metric = float(df.target_metric)
             self.max_progress = self.application.progress_per_epoch * \
                 self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
             # self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
-            # print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
+            print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
         else: 
             self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
         self.target_batch_size = int(df.target_batch_size)
@@ -44,10 +43,7 @@ class FoundationModelJob(BaseJob):
         self.atomic_bsz = 0 
         self.accum_steps = 0
         
-        
-        
     
-
     def get_actual_loss_value(self, predict_progress):
         normalized_progress = min(1, 1.0 * predict_progress / self.max_progress)
         return 1000. / (1 + 0.25 * normalized_progress)
@@ -106,6 +102,7 @@ class FoundationModelJob(BaseJob):
         local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
         self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
         self.atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
+        self.atomic_bsz = max(self.application.min_local_bsz, self.atomic_bsz)
         count = num_replicas * (self.accum_steps + 1)
         self.atomic_bsz = min(self.atomic_bsz, int(app.max_batch_size / count))
 
@@ -168,6 +165,19 @@ class FoundationModelJob(BaseJob):
         self.placement = None 
         self.topology = None 
         self.status = JobState.PENDING
+
+
+
+class TransferFoundationModelJob(FoundationModelJob): 
+    __alias__ = 'transfer_foundation_model' 
+    def __init__(self, previous_model, current_model, **kwargs): 
+        self.previous_model = previous_model
+        self.current_model = current_model 
+        for attr in dir(self.current_model): 
+            instance = getattr(self.current_model, attr)
+            setattr(self, attr, instance)
+        self.max_progress = self.application.progress_per_epoch * \
+                self.application.get_transfer_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
 
 
 

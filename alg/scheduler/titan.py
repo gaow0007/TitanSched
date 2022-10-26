@@ -149,7 +149,6 @@ class TitanScheduler(BaseScheduler):
         weight_per_allocation_list = list() 
         equalivent_allocation_list = list() 
         if self.multi_task_adaptivity: 
-            # TODO 
             runnable_jobs = sorted(runnable_jobs, key=lambda job: (job.application.name, job.application.data_scale)) 
 
         total_gpu_num = self.cluster_manager.check_total_gpus() 

@@ -9,7 +9,9 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     # for trace in `ls trace/`
-    for trace in FM-480-roberta-base
+    # for trace in FM-720-vit-large
+    for trace in FM-320-roberta-large
+    # for trace in FM-480-vit
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -17,17 +19,17 @@ do
             num_gpu_p_node=4
             scheduling_time_interval=60
             add_ckpt=120
-            for schedule in titan # themis titan tiresias optimus srtf 
+            for schedule in titan # titan tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
             do 
                 extra_cmd=""
-                if [[ $schedle == "titan" ]] ;
+                if [[ $schedule == "titan" ]] ;
                 then 
-                    # extra_cmd="--multi_task_adaptivity"
-                    extra_cmd=""
+                    extra_cmd=" --multi_task_adaptivity=True"
+                    # extra_cmd=""
                     scheduling_time_interval=120
                 fi 
 
-                if [[ $schedle == "themis" ]] ;
+                if [[ $schedule == "themis" ]] ;
                 then 
                     # extra_cmd="--multi_task_adaptivity"
                     extra_cmd=" --lease_term_interval=600"

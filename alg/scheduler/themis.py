@@ -27,6 +27,7 @@ class ThemisScheduler(BaseScheduler):
     
 
     def finish_all_jobs(self, ):
+        # print('event_jobs {}, pending_jobs {}, running_jobs {}'.format(len(self.event_jobs), len(self.pending_jobs), len(self.running_jobs)))
         return len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) == 0
     
 

@@ -225,14 +225,16 @@ def main(model, APPLICATIONS):
                 model, dataet = rec["application"].split('@')
                 metric, lr, gradient_steps = FMStats.hpo_info.query_best_hpo(model, dataet, last_epoch=False)
                 if 'vit' in model: 
-                    target_batch_size = 16 
+                    target_batch_size = 12 * 4
                 elif 'roberta' in model: 
-                    target_batch_size = 4
+                    target_batch_size = 4 * 4
                 rec["target_batch_size"] = target_batch_size * gradient_steps
                 rec["target_metric"] = metric
                 rec["target_lr"] = str(lr)
                 rec["target_gradient_steps"] = gradient_steps
                 rec["num_gpus"] = min(num_gpus, rec["target_batch_size"] // APPLICATIONS[rec['application']].min_local_bsz)
+                if rec["num_gpus"] == 0: 
+                    import pdb; pdb.set_trace() 
             else: 
                 rec["target_batch_size"] = APPLICATIONS[rec["application"]].max_batch_size
                 rec["num_gpus"] = num_gpus
