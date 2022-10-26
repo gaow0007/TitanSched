@@ -14,20 +14,38 @@ class FoundationModelJob(BaseJob):
     __alias__ = 'foundation_model' 
     def __init__(self, df, **kwargs): 
         super(FoundationModelJob, self).__init__(name=df.name, application=df.application, submission_time=df.submission_time)
+        # speed information
         self.target_num_gpus = df.num_gpus
-        self.target_batch_size = df.target_batch_size
+        
         self.application = FOUNDATIONMODELAPPLICATIONS[df.application]
         self.min_num_gpus = 1
-        self.max_num_gpus = self.target_num_gpus * 4
+        self.max_num_gpus = 32 # self.target_num_gpus * 4
         self.elastic = True 
-        
         self.placement = None 
         self.preemptible = True 
-        self.max_progress = self.application.progress_per_epoch  * 10 # * self.get_completion_epoch()
-        self.atomic_bsz = 0 
-        self.accum_steps = 0
         self.add_ckpt = kwargs.get('add_ckpt', 0)
         self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(1, pipeline=False)
+
+        # statistical information
+        if hasattr(df, 'target_metric'): 
+            self.target_gradient_steps = df.target_gradient_steps
+            self.target_lr = df.target_lr
+            self.target_metric = df.target_metric 
+            # 1.936880 for 480 jobs
+            self.max_progress = self.application.progress_per_epoch * \
+                self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
+            # self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
+            # print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
+        else: 
+            self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
+        self.target_batch_size = int(df.target_batch_size)
+        self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
+         # * self.get_completion_epoch()
+        self.atomic_bsz = 0 
+        self.accum_steps = 0
+        
+        
+        
     
 
     def get_actual_loss_value(self, predict_progress):
@@ -67,6 +85,7 @@ class FoundationModelJob(BaseJob):
         elif isinstance(placement, collections.Iterable): 
             placcement = tuple([p for p in placement])
         else: 
+            print(placement, type(placement))
             raise NotImplementedError
         
         self.update_local_bsz(placement)

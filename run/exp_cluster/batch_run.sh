@@ -8,8 +8,8 @@ for root in  'trace/'
 do 
     match="FM-"
     # for trace in `{ls $root/FM-* `
-    for trace in `ls trace/`
-    # for trace in FM-480-roberta-base
+    # for trace in `ls trace/`
+    for trace in FM-480-roberta-base
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -17,7 +17,7 @@ do
             num_gpu_p_node=4
             scheduling_time_interval=60
             add_ckpt=120
-            for schedule in themis titan tiresias optimus srtf 
+            for schedule in titan # themis titan tiresias optimus srtf 
             do 
                 extra_cmd=""
                 if [[ $schedle == "titan" ]] ;

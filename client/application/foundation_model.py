@@ -49,7 +49,7 @@ class FoundationModelSpeed(object):
     def get_context_switch_overhead(self, placement, pipeline):
         # import pdb; pdb.set_trace() 
         # self.context_switch_overhead[placement, pipeline]
-        return self.context_switch_overhead.time_cost.max() 
+        return float(self.context_switch_overhead.time_cost.max())
     
     @memoize
     def get_memory_consumption(self, local_bsz): 
@@ -89,7 +89,25 @@ FOUNDATIONMODELSPEEDS = {
     "roberta-large": FoundationModelSpeed(SPEED_DIR, "roberta-large"), 
 }
 
+# //////////////////////////////////////////////////////////////////////////////////////////////////////
+from common.prefix_utils import generate_prefix
+from common.applications import (
+    HPOTaskingInfo, 
+    MultiTaskingInfo, 
+    TransferTaskingInfo, 
+    metrick_key_generator)
 
+class FoundationModelStats(object): 
+    def __init__(self, ): 
+        self.hpo_info = HPOTaskingInfo(load_cache=True)
+        self.mtask_info = MultiTaskingInfo(load_cache=True) 
+        self.transfer_info = TransferTaskingInfo(load_cache=True) 
+    
+    def query_epoch(self, model, dataset, lr, gradient_steps, metric_key, target_metric): 
+        return self.hpo_info.query_epoch(model, dataset, lr, gradient_steps, metric_key, target_metric)
+
+
+FMStats = FoundationModelStats() 
 # //////////////////////////////////////////////////////////////////////////////////////////////////////
 TaskScale = {
     'wnli' : 159,
@@ -103,6 +121,17 @@ TaskScale = {
     'snli' : 137344,
     'ag_news' : 30000,
     'wikitext-103':59061,
+    # for image classification
+    "Bingsu#Cat_and_Dog": 8000,
+    "frgfm#imagenette": 9469,
+    "Bingsu#Human_Action_Recognition": 12600,
+    "cifar100": 50000,
+    "fashion_mnist": 60000,
+    "mnist": 60000,
+    "food101": 75750,
+    "imagenet-split-0": 25000, 
+    "imagenet-split-1": 75000, 
+    "imagenet-split-2": 100000, 
 }
 
 class FoundationModelApplication(object): 
@@ -114,9 +143,12 @@ class FoundationModelApplication(object):
         
         # speed-related 
         self.fm_speed = FOUNDATIONMODELSPEEDS[self.model_name]
-        self.max_local_bsz = self.fm_speed.placements.local_bsz.max() 
-        self.min_local_bsz = self.fm_speed.placements.local_bsz.min() 
-        self.metric_key = get_standarized_metric(self.task_name)
+
+        # stats-related 
+        
+        self.max_local_bsz = int(self.fm_speed.placements.local_bsz.max())
+        self.min_local_bsz = int(self.fm_speed.placements.local_bsz.min())
+        self.metric_key = FMStats.hpo_info.standarized_metric(self.task_name)
         self.progress_per_epoch = TaskScale[self.task_name]
         self.max_epochs = 10
         self.max_batch_size = 256
@@ -131,11 +163,11 @@ class FoundationModelApplication(object):
     def get_throughput(self, placement, local_bsz):
         return self.fm_speed.get_throughput(placement, local_bsz) 
     
-    def get_completion_epoch(self, batch_size, lr, target_metric):
-        performance_traj = self.performance_report[batch_size][lr]
+    def get_completion_epoch(self, lr, gradient_steps, target_metric):
+        performance_traj =  FMStats.hpo_info.performance_report[self.model_name][self.task_name][lr][gradient_steps]
         for epoch in range(self.max_epochs): 
-            metric = performance_traj[epoch][self.metric_key]
-            if target_metric >= metric: 
+            metric = performance_traj[self.metric_key][epoch]
+            if metric >= target_metric: 
                 return epoch + 1
         return self.max_epochs
     
@@ -146,6 +178,7 @@ class FoundationModelApplication(object):
 
 STATS_DIR = os.path.join(os.path.dirname(__file__), "appinfo", "fminfo")
 FOUNDATIONMODELAPPLICATIONS = {
+    # ////////////////////////// -- language models 
     "roberta-base@wnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@wnli"), scale="small"), 
     "roberta-base@rte": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@rte"), scale="small"), 
     "roberta-base@mrpc": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@mrpc"), scale="small"), 
@@ -164,6 +197,25 @@ FOUNDATIONMODELAPPLICATIONS = {
     "roberta-large@qqp": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@qqp"), scale="large"), 
     "roberta-large@mnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@mnli"), scale="large"), 
     "roberta-large@snli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@snli"), scale="xlarge"), 
+    # ////////////////////////// -- vision models 
+    "vit@Bingsu#Cat_and_Dog": FoundationModelApplication(os.path.join(STATS_DIR, "vit@Bingsu#Cat_and_Dog"), scale="small"), 
+    "vit@frgfm#imagenette": FoundationModelApplication(os.path.join(STATS_DIR, "vit@frgfm#imagenette"), scale="small"), 
+    "vit@cifar100": FoundationModelApplication(os.path.join(STATS_DIR, "vit@cifar100"), scale="medium"), 
+    "vit@fashion_mnist": FoundationModelApplication(os.path.join(STATS_DIR, "vit@fashion_mnist"), scale="large"), 
+    "vit@mnist": FoundationModelApplication(os.path.join(STATS_DIR, "vit@mnist"), scale="large"), 
+    "vit@food101": FoundationModelApplication(os.path.join(STATS_DIR, "vit@food101"), scale="large"), 
+    "vit@imagenet-split-0": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-0"), scale="medium"), 
+    "vit@imagenet-split-1": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-1"), scale="large"), 
+    "vit@imagenet-split-2": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-2"), scale="large"), 
+    "vit-large@Bingsu#Cat_and_Dog": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@Bingsu#Cat_and_Dog"), scale="small"), 
+    "vit-large@frgfm#imagenette": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@frgfm#imagenette"), scale="small"), 
+    "vit-large@cifar100": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@cifar100"), scale="medium"), 
+    "vit-large@fashion_mnist": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@fashion_mnist"), scale="large"), 
+    "vit-large@mnist": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@mnist"), scale="large"), 
+    "vit-large@food101": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@food101"), scale="large"), 
+    "vit-large@imagenet-split-0": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@imagenet-split-0"), scale="medium"), 
+    "vit-large@imagenet-split-1": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@imagenet-split-1"), scale="large"), 
+    "vit-large@imagenet-split-2": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@imagenet-split-2"), scale="large"), 
 }
 
 

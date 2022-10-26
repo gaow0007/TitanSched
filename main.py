@@ -32,7 +32,7 @@ def prepare_job_manager():
     return JobManager() 
 
 def parse_job_file(filename, job_type, job_manager, opt): 
-    df = pd.DataFrame(pd.read_csv(filename)).dropna() 
+    df = pd.DataFrame(pd.read_csv(filename, dtype={'target_lr':str})).dropna() 
     for idx, row in df.iterrows(): 
         row.name = row[0] # TODO
         if job_type == 'base': 

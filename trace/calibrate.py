@@ -175,6 +175,7 @@ def main(model, APPLICATIONS):
     rng2 = random.Random(seed + 3)
     rng3 = random.Random(seed + 4)
     job_rng = np.random.default_rng(seed)
+    from client.application.foundation_model import FMStats
 
     for trace_name, trace in [('BM', bm_trace)]: 
         sample = trace.loc[(trace.duration >= args.min_time) & (trace.duration < args.max_time)]
@@ -199,14 +200,16 @@ def main(model, APPLICATIONS):
         medium_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'medium']
         large_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'large']
         xlarge_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'xlarge']
+        if len(xlarge_list) == 0: 
+            xlarge_list = large_list
 
         for row in sample.itertuples(): 
             rec = {"submission_time": row.submission_time}
 
             num_gpus = row.num_gpus
-            rec['application'] =application_list[0]
+            rec['application'] = application_list[0]
             if row.gpu_time <= 1 * 3600:
-                rec["application"] = rng.choice(small_list)
+                rec["application"] =  rng.choice(small_list)
             elif row.gpu_time <= 10 * 3600:
                 rec["application"] = rng.choice(medium_list)
             elif row.gpu_time < 100 * 3600:
@@ -218,9 +221,22 @@ def main(model, APPLICATIONS):
             else: 
                 rec["application"] = rng.choice[xlarge_list]
                 num_gpus = rng3.choice(subset.num_gpus.to_list()) 
+            if args.add_metric: 
+                model, dataet = rec["application"].split('@')
+                metric, lr, gradient_steps = FMStats.hpo_info.query_best_hpo(model, dataet, last_epoch=False)
+                if 'vit' in model: 
+                    target_batch_size = 16 
+                elif 'roberta' in model: 
+                    target_batch_size = 4
+                rec["target_batch_size"] = target_batch_size * gradient_steps
+                rec["target_metric"] = metric
+                rec["target_lr"] = str(lr)
+                rec["target_gradient_steps"] = gradient_steps
+                rec["num_gpus"] = min(num_gpus, rec["target_batch_size"] // APPLICATIONS[rec['application']].min_local_bsz)
+            else: 
+                rec["target_batch_size"] = APPLICATIONS[rec["application"]].max_batch_size
+                rec["num_gpus"] = num_gpus
             
-            rec["num_gpus"] = num_gpus
-            rec["target_batch_size"] = APPLICATIONS[rec["application"]].max_batch_size
             records.append(rec)
 
         # sample.drop(columns=['gpu_time'], inplace=True)
@@ -228,9 +244,11 @@ def main(model, APPLICATIONS):
         records.sort(key=lambda v: v["submission_time"])
         for idx, rec in enumerate(records):
             rec["name"] = "{}-{}".format(rec["application"], idx)
-    
-    return pd.DataFrame(records, columns=("name", "submission_time", "application",
-                                              "num_gpus", "target_batch_size"))
+    if args.add_metric: 
+        colums = ("name", "submission_time", "application", "num_gpus", "target_batch_size", "target_lr", "target_gradient_steps", "target_metric")
+    else: 
+        colums = ("name", "submission_time", "application", "num_gpus", "target_batch_size")
+    return pd.DataFrame(records, columns=colums)
 
 def get_config_from_yaml(yaml_file):
     """
@@ -273,6 +291,7 @@ parser.add_argument('--model', default=None, type=str, help='model name')
 parser.add_argument('--seed', default=-1, type=int, help='seed')
 parser.add_argument('--repeat_number', default=1, type=int, help='the number of repeat experiments')
 parser.add_argument('--full_trace', default=False, type=ast.literal_eval, help='whether extract all trace')
+parser.add_argument('--add_metric', default=False, type=ast.literal_eval, help='whether extract all trace')
 args = parser.parse_args()
 
 
@@ -295,7 +314,7 @@ if __name__ == '__main__':
             os.makedirs(args.save_root) 
         
         # for model in ['vit', 'vit-large', 'roberta-base', 'roberta-large']: 
-        for model_name in ['roberta-base']: 
+        for model_name in [args.model]: # , 'vit', 'vit-large']: 
             APPLICATIONS = {} 
             for task in FOUNDATIONMODELAPPLICATIONS.keys(): 
                 if model_name in task: 
