@@ -8,10 +8,10 @@ for root in  'trace/'
 do 
     match="FM-"
     # for trace in `{ls $root/FM-* `
-    # for trace in `ls trace/`
+    for trace in `ls trace/`
     # for trace in FM-720-vit-large
-    for trace in FM-320-roberta-large
     # for trace in FM-480-vit
+    # for trace in FM-320-vit-large
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -19,29 +19,34 @@ do
             num_gpu_p_node=4
             scheduling_time_interval=60
             add_ckpt=120
-            for schedule in titan # titan tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+            for multi_task_adaptivity in True False 
             do 
-                extra_cmd=""
-                if [[ $schedule == "titan" ]] ;
-                then 
-                    extra_cmd=" --multi_task_adaptivity=True"
-                    # extra_cmd=""
-                    scheduling_time_interval=120
-                fi 
+                for schedule in titan # titan tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                do 
+                    extra_cmd=""
+                    if [[ $schedule == "titan" ]] ;
+                    then 
+                        # 0.391540 (hour) for normal scheduling 
+                        # 1.164363 for normal scheduling
+                        extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity" # 0.302186
+                        # extra_cmd=""
+                        scheduling_time_interval=600
+                    fi 
 
-                if [[ $schedule == "themis" ]] ;
-                then 
-                    # extra_cmd="--multi_task_adaptivity"
-                    extra_cmd=" --lease_term_interval=600"
-                fi 
+                    if [[ $schedule == "themis" ]] ;
+                    then 
+                        # extra_cmd="--multi_task_adaptivity"
+                        extra_cmd=" --lease_term_interval=600"
+                    fi 
 
-                job_type="foundation_model"
-                $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
-                            --save_log_dir=result/$schedule/$trace --ident=$schedule_$trace \
-                            --placement=consolidate --num_node_p_switch=$num_node_p_switch \
-                            --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd}
-            done
+                    job_type="foundation_model"
+                    $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
+                                --save_log_dir=result/$schedule/$trace --ident="${schedule}_${trace}_${multi_task_adaptivity}" \
+                                --placement=consolidate --num_node_p_switch=$num_node_p_switch \
+                                --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
+                                --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd}
+                done
+            done 
         fi
         
     done

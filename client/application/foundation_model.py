@@ -95,7 +95,8 @@ from common.applications import (
     HPOTaskingInfo, 
     MultiTaskingInfo, 
     TransferTaskingInfo, 
-    metrick_key_generator)
+    metrick_key_generator,
+    query_index)
 
 class FoundationModelStats(object): 
     def __init__(self, ): 
@@ -167,13 +168,14 @@ class FoundationModelApplication(object):
         target_metric = kwargs.get('target_metric')
         assert target_metric is not None 
         if kwargs.get('transfer') == True: 
-            insert_key = FMStats.transfer_info.generate_dataset_key(kwargs.get('datasetX'), kwargs.get('datasetY'))
+            insert_key = FMStats.transfer_info.generate_dataset_key(kwargs.get('taskA'), kwargs.get('taskB'))
             performance_traj = FMStats.transfer_info.performance_report[self.model_name][insert_key] 
             metric_info = performance_traj[self.metric_key]
             epoch_info = performance_traj[self.metric_key + '_epoch']
         elif kwargs.get('mtask') == True: 
-            insert_key = FMStats.mtask_info.generate_dataset_key(kwargs.get('datasetX'), kwargs.get('datasetY'))
-            performance_traj = FMStats.transfer_info.performance_report[self.model_name][insert_key] 
+            insert_key = FMStats.mtask_info.generate_dataset_key(kwargs.get('taskA'), kwargs.get('taskB'))
+            performance_traj = FMStats.mtask_info.performance_report[self.model_name][insert_key] 
+            print(performance_traj.keys())
             metric_key = '{}_{}'.format(self.task_name, self.metric_key)
             metric_info = performance_traj[metric_key]
             epoch_info = performance_traj[metric_key + '_epoch']
@@ -184,6 +186,7 @@ class FoundationModelApplication(object):
             metric_info = performance_traj[self.metric_key]
             epoch_info = performance_traj[self.metric_key + '_epoch']
 
+
         min_epoch = None 
         for epoch, metric in zip(epoch_info, metric_info): 
             if target_metric <= metric: 
@@ -193,6 +196,10 @@ class FoundationModelApplication(object):
                     min_epoch = min(epoch, min_epoch)
         
         return self.max_epochs if min_epoch is None else min_epoch
+    
+    def query_index(self, ): 
+        return query_index(self.task_name)
+
     
 
 

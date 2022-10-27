@@ -1,12 +1,12 @@
 import os, sys
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 import numpy as np 
-from client.job.foundation_model import FoundationModelJob, MergeFoundationModelJob
+from client.job.foundation_model import FoundationModelJob, MtaskFoundationModelJob, TransferFoundationModelJob
 from client.job.state import JobState
 from .base import BaseScheduler
 from .schedutils import resource_summary, schedule_summary
 from .titan_solver import TitanSolver, TitanMultiTaskAdaptivitySolver
-
+from .titan_mtask import mtask_builder
 
 
 class TitanScheduler(BaseScheduler):
@@ -20,9 +20,9 @@ class TitanScheduler(BaseScheduler):
         self.scheduling_time_interval = kwargs.get('scheduling_time_interval', 10)
         self.save_dir = kwargs.get('save_dir', 'result/')
         self.multi_task_adaptivity = kwargs.get('multi_task_adaptivity', False)
-        if self.multi_task_adaptivity: 
+        if self.multi_task_adaptivity: # 0.391540
             self.titan_solver = TitanMultiTaskAdaptivitySolver(method='multi-task-adaptivity')
-        else: 
+        else: # 0.391540
             self.titan_solver = TitanSolver(method='naive')
         self.solver_time_list = list() 
     
@@ -108,6 +108,11 @@ class TitanScheduler(BaseScheduler):
         need_remove_jobs = list()
         self.logger.info('the number of running jobs is {}'.format(len(self.running_jobs)))
         used_gpus = 0
+        for job in self.running_jobs: 
+            if isinstance(job, MtaskFoundationModelJob): 
+                self.logger.info('mtask name {}, progress {}, max progress {}'.format(job.name, job.progress, job.max_progress))
+
+        # self.debug_cluster(cur_time) 
         for job in self.running_jobs:
             job.step(cur_time - max(prev_time, job.submission_time))
             self.logger.info("    {}:\t[placement {}]\t[progress {:.2f}%]".format(
@@ -115,10 +120,12 @@ class TitanScheduler(BaseScheduler):
             used_gpus += sum(job.placement)
             if job.completion_time is not None: 
                 self.release_job_resource(job) == True
-                if isinstance(job, MergeFoundationModelJob): 
+                if isinstance(job, MtaskFoundationModelJob): 
                     need_remove_jobs.append(job)
                     single_job_list = job.split_after_complete() 
                     for single_job in single_job_list: 
+                        # if single_job.name == 'vit-large@imagenet-split-2-22': 
+                        #     import pdb; pdb.set_trace() 
                         single_job.status = JobState.END
                         self.completion_jobs.append(single_job) 
                         self.logger.info('running job {} is finished at time {}'.format(single_job.name, cur_time))
@@ -137,6 +144,19 @@ class TitanScheduler(BaseScheduler):
             job.step(seconds=cur_time - max(prev_time, job.submission_time))
 
 
+    def normalized_weight(self, weight_list, power): 
+        if power < 0: 
+            if len(weight_list) > 0 and max(weight_list) > 10000: 
+                normalized_weight = max(weight_list) / 100 
+                weight_list = [weight / normalized_weight for weight in weight_list]
+        else: 
+            if len(weight_list) > 0 and min(weight_list) < 1e-2: 
+                normalized_weight = min(weight_list) / 1e-2
+                if normalized_weight == 0: 
+                    import pdb; pdb.set_trace() 
+                weight_list = [weight / normalized_weight for weight in weight_list]
+        return weight_list
+
 
     def flush_runnable_jobs(self, prev_time, cur_time):
         runnable_jobs = self.pending_jobs + self.running_jobs
@@ -148,39 +168,31 @@ class TitanScheduler(BaseScheduler):
         required_resource_list = list() 
         weight_per_allocation_list = list() 
         equalivent_allocation_list = list() 
-        if self.multi_task_adaptivity: 
-            runnable_jobs = sorted(runnable_jobs, key=lambda job: (job.application.name, job.application.data_scale)) 
 
         total_gpu_num = self.cluster_manager.check_total_gpus() 
-        max_allocated_gpu_num = 32
         # candidate_gpus = [i for i in range(0, total_gpu_num + 1)]
         candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
-        if not self.multi_task_adaptivity: 
-            runnable_jobs = sorted(runnable_jobs, key=lambda job: job.predict_remaining_time(1))
-            if len(runnable_jobs) > total_gpu_num: 
-                for job in runnable_jobs[total_gpu_num:]: 
-                    if job.status == JobState.RUNNING: 
-                        self.execute_preempt(job, cur_time)
-                        if job in self.running_jobs: 
-                            self.running_jobs.remove(job)
-                        if job not in self.pending_jobs: 
-                            self.pending_jobs.append(job)
-                        
-                runnable_jobs = runnable_jobs[:total_gpu_num]
-                
+        runnable_jobs = sorted(runnable_jobs, key=lambda job: job.predict_remaining_time(1))
+        if len(runnable_jobs) > total_gpu_num: 
+            for job in runnable_jobs[total_gpu_num:]: 
+                if job.status == JobState.RUNNING: 
+                    self.execute_preempt(job, cur_time)
+                    if job in self.running_jobs: 
+                        self.running_jobs.remove(job)
+                    if job not in self.pending_jobs: 
+                        self.pending_jobs.append(job)
+            runnable_jobs = runnable_jobs[:total_gpu_num]
             
-
-
         if len(runnable_jobs) > 0: 
-            fair_placement = max(1, int(total_gpu_num / len(runnable_jobs)))
+            fair_placement = max(1, int(total_gpu_num / sum([job.job_number for job in runnable_jobs])))
 
         for idx, job in enumerate(runnable_jobs):
-
-            fair_remaining_time = max(job.predict_remaining_time(min(fair_placement, job.max_num_gpus)), self.scheduling_time_interval)
+            job.equalivent_allocation_idx = idx 
+            fair_remaining_time = max(job.predict_remaining_time(min(fair_placement * job.job_number, job.max_num_gpus)), self.scheduling_time_interval)
             for gpu_num in candidate_gpus: 
                 if gpu_num == 0: 
                     required_resource_list.append(gpu_num)
-                    weight_per_allocation_list.append(1e-4)
+                    weight_per_allocation_list.append(1e-4*job.base_weight_scale)
                     equalivent_allocation_list.append(idx)
                     continue 
                 
@@ -210,120 +222,94 @@ class TitanScheduler(BaseScheduler):
                 # print('max_progress', job.max_progress, job.progress, weight)
                 if np.isinf(weight) or np.isnan(weight): 
                     required_resource_list.append(gpu_num)
-                    weight_per_allocation_list.append(1e-4)
+                    weight_per_allocation_list.append(1e-4*job.base_weight_scale)
                     equalivent_allocation_list.append(idx)
                     continue 
-                
+                weight = weight # * job.reweight
                 required_resource_list.append(gpu_num)
                 weight_per_allocation_list.append(weight)
                 equalivent_allocation_list.append(idx)
+                
         
+        if self.multi_task_adaptivity: 
+            mtask_required_resource_list, mtask_weight_per_allication_list, mtask_equalivent_allocation_list, mtask_jobs = \
+                mtask_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
+                    weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
+
+
+
+        power = -1
+        normalized_weight_per_allocation_list = self.normalized_weight(weight_per_allocation_list + (mtask_weight_per_allication_list if self.multi_task_adaptivity else []), power)
+        if self.multi_task_adaptivity: 
+            print(len(normalized_weight_per_allocation_list), len(weight_per_allocation_list), len(mtask_weight_per_allication_list))
+            weight_per_allocation_list = normalized_weight_per_allocation_list[:len(weight_per_allocation_list)]
+            assert len(mtask_weight_per_allication_list) == len(normalized_weight_per_allocation_list[len(weight_per_allocation_list):])
+            mtask_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list):]
+            
+        else: 
+            weight_per_allocation_list = normalized_weight_per_allocation_list
 
         if self.multi_task_adaptivity: 
-            job_cluster_set = dict() 
-            for idx, job in enumerate(self.pending_jobs): 
-                if job.application.name not in job_cluster_set: 
-                    job_cluster_set[job.application.name] = list() 
-                job_cluster_set[job.application.name].append((idx, job))
-            
-            merge_required_resource_list = list() 
-            merge_weight_per_allication_list = list() 
-            merge_equalivent_allocation_list = list() 
-            merge_unique_job_num = 0 
-            merge_job_list = list() 
-
-            for cluster_name, job_clusters in job_cluster_set.items(): 
-                if len(job_clusters) > 1: 
-                    forbidden_job_id_list = [job_info[0] for job_info in job_clusters]
-                    merge_unique_job_num += 1
-                    normalized_iteration_list = sorted([job_info[1].target_iteration for job_info in job_clusters])
-                    reweight = sum(np.cumsum([item / normalized_iteration_list[0] for item in normalized_iteration_list])) / len(normalized_iteration_list)
-                    self.logger.info("job len {}, reweight {}".format(len(forbidden_job_id_list), reweight)) 
-                    merge_job = MergeFoundationModelJob([job_info[1] for job_info in job_clusters], cur_time) 
-                    merge_job_list.append(merge_job)
-                    self.logger.info('merge job iteration {}'.format(merge_job.target_iteration))
-                    self.logger.info('single job iteration {}'.format([single_job.target_iteration for single_job in merge_job.fm_list]))
-                    self.logger.info('comparison between merge {} and single {}'.format(merge_job.target_iteration * reweight, sum([single_job.target_iteration for single_job in merge_job.fm_list])))
-                    for gpu_num in [1, 2, 4, 8]: 
-                        merge_required_resource_list.append(gpu_num) 
-                        merge_weight_per_allication_list.append(merge_job.application.get_max_throughput(placement=[gpu_num]) / merge_job.target_iteration * reweight)
-                        merge_equalivent_allocation_list.append(forbidden_job_id_list)
-            power = -1
-            solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, \
-                                                    merge_required_resource_list, merge_weight_per_allication_list, merge_equalivent_allocation_list, \
-                                                    merge_unique_job_num, cluster_capacity, max_seconds=5)
-            should_run_jobs = list() 
-            for idx, job in enumerate(self.pending_jobs): 
-                if solution[idx] > 0: 
-                    job.target_num_gpus = solution[idx]
-                    should_run_jobs.append(job)
-
-            should_run_merge_jobs = list() 
-            for idx, merge_job in enumerate(merge_job_list): 
-                if solution[idx + unique_job_num] > 0: 
-                    merge_job.target_num_gpus = solution[idx + unique_job_num]
-                    should_run_merge_jobs.append(merge_job)
-            should_run_jobs = should_run_jobs + should_run_merge_jobs
-            
-        else:
-            
-            power = -1
-            if power < 0: 
-                if len(weight_per_allocation_list) > 0 and max(weight_per_allocation_list) > 10000: 
-                    normalized_weight = max(weight_per_allocation_list) / 100 
-                    weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
-            else: 
-                if len(weight_per_allocation_list) > 0 and min(weight_per_allocation_list) < 1e-2: 
-                    normalized_weight = min(weight_per_allocation_list) / 1e-2
-                    if normalized_weight == 0: 
-                        import pdb; pdb.set_trace() 
-                    weight_per_allocation_list = [weight / normalized_weight for weight in weight_per_allocation_list]
-            
-            # if len(self.running_jobs) + len(self.pending_jobs) > 10: 
-            #     import pdb; pdb.set_trace()  
-            
+            unique_job_num = len(runnable_jobs)
+            mtask_unique_job_num = len(mtask_jobs)
+            print([job.name for job in mtask_jobs])
+            solution = self.titan_solver.job_selection(required_resource_list=required_resource_list, 
+                                                    weight_per_allocation_list=weight_per_allocation_list, 
+                                                    equalivent_allocation_list=equalivent_allocation_list, 
+                                                    unique_job_num=unique_job_num, \
+                                                    mtask_required_resource_list=mtask_required_resource_list, \
+                                                    mtask_weight_per_allication_list=mtask_weight_per_allication_list, \
+                                                    mtask_equalivent_allocation_list=mtask_equalivent_allocation_list, \
+                                                    mtask_unique_job_num=mtask_unique_job_num, 
+                                                    cluster_capacity=cluster_capacity, 
+                                                    max_seconds=30, power=power)
+        else: 
             solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, \
-                                                        equalivent_allocation_list, unique_job_num, cluster_capacity, \
-                                                        max_seconds=30, power=power)
-            # if len(self.running_jobs) + len(self.pending_jobs) > 30 and sum(solution) < 10: 
-            #     import pdb; pdb.set_trace() 
-            # power_list = [(weight_per_allocation_list[i] ** power) for i in range(len(weight_per_allocation_list))]
-            self.logger.info('solution == {}'.format(solution))
-            if len(self.pending_jobs) >= 20 and len(self.running_jobs) == 0 and sum(solution) == 0: 
-                import pdb; pdb.set_trace() 
-            should_run_jobs = list() 
-            for idx, job in enumerate(runnable_jobs): 
-                if job.status == JobState.RUNNING: 
+                                            equalivent_allocation_list, unique_job_num, cluster_capacity, \
+                                            max_seconds=30, power=power)
+
+        self.logger.info('solution == {}'.format(solution))
+
+        should_run_jobs = list() 
+        for idx, job in enumerate(runnable_jobs): 
+            if job.status == JobState.RUNNING: 
+                if job.target_num_gpus != solution[idx]: 
+                    # if not hasattr(job, 'topology'): 
+                    #     import pdb; pdb.set_trace() 
+
+                    self.execute_preempt(job, cur_time)
+                    if job in self.running_jobs: 
+                        self.running_jobs.remove(job)
+                    
+                    if job not in self.pending_jobs: 
+                        self.pending_jobs.append(job)
+
+                if solution[idx] > 0: 
                     if job.target_num_gpus != solution[idx]: 
-                        if not hasattr(job, 'topology'): 
-                            import pdb; pdb.set_trace() 
-
-                        self.execute_preempt(job, cur_time)
-                        if job in self.running_jobs: 
-                            self.running_jobs.remove(job)
-                        
-                        if job not in self.pending_jobs: 
-                            self.pending_jobs.append(job)
-
-                    if solution[idx] > 0: 
-                        if job.target_num_gpus != solution[idx]: 
-                            job.target_num_gpus = solution[idx] 
-                            should_run_jobs.append(job)
-                    else: 
-                        
-                        job.target_num_gpus = None 
-                        job.status = JobState.PENDING
-                        if job not in self.pending_jobs: 
-                            self.pending_jobs.append(job)
-                        
-                elif job.status == JobState.PENDING: 
-                    if solution[idx] > 0: 
                         job.target_num_gpus = solution[idx] 
                         should_run_jobs.append(job)
-
                 else: 
-                    raise NotImplementedError 
+                    
+                    job.target_num_gpus = None 
+                    job.status = JobState.PENDING
+                    if job not in self.pending_jobs: 
+                        self.pending_jobs.append(job)
+                    
+            elif job.status == JobState.PENDING: 
+                if solution[idx] > 0: 
+                    job.target_num_gpus = solution[idx] 
+                    should_run_jobs.append(job)
+
+            else: 
+                raise NotImplementedError 
         
+        if self.multi_task_adaptivity:
+            for idx, mtask_job in enumerate(mtask_jobs): 
+                if solution[unique_job_num + idx] > 0:
+                    should_run_jobs.append(mtask_job)
+                    mtask_job.target_num_gpus = solution[unique_job_num + idx]
+
+
         self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
         self.place_jobs(should_run_jobs, cur_time)
         
@@ -340,22 +326,24 @@ class TitanScheduler(BaseScheduler):
             else: 
                 # import pdb; pdb.set_trace() 
                 job.target_num_gpus = None 
-                if job not in self.pending_jobs: 
+                if job not in self.pending_jobs and job not in mtask_jobs: 
                     self.pending_jobs.append(job)
-        # if cur_time == 6600: 
-        #     for job in should_run_jobs: 
-        #         if job.name == 'roberta-base@qnli-11': 
-        #             import pdb; pdb.set_trace() 
-
-        # self.debug_cluster(cur_time)
+        
         self.logger.info('running jobs gpu allocations {}'.format([job.target_num_gpus for job in self.running_jobs]))
         self.logger.info('running jobs progress        {}'.format([job.max_progress - job.progress for job in self.running_jobs]))
-        if self.multi_task_adaptivity: 
-            for job in should_run_merge_jobs: 
-                if job.placement is not None: 
-                    for single_job in job.fm_list: 
-                        self.pending_jobs.remove(single_job)
-                        
+
+        # for job in self.pending_jobs: 
+        #     if cur_time == 600: 
+        #         if job.name == 'vit@frgfm#imagenette-0': 
+        #             import pdb; pdb.set_trace() 
+
+        if self.multi_task_adaptivity:
+            for job in mtask_jobs: 
+                print('job name {}, job placement {}'.format(job.name, job.placement))
+                if job.placement is not None:
+                    self.logger.info('remove job A {}, job B {}'.format(job.modelA.name, job.modelB.name))
+                    self.pending_jobs.remove(job.modelA)
+                    self.pending_jobs.remove(job.modelB)
 
     def flush_jobs(self, prev_time, cur_time, status):
         if status == JobState.EVENT:

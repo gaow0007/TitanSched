@@ -34,12 +34,14 @@ class FoundationModelJob(BaseJob):
             self.max_progress = self.application.progress_per_epoch * \
                 self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
             # self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
-            print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
+            # print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
+            self.training_epochs = self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
         else: 
             self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
+            self.training_epochs = self.application.max_epochs
         self.target_batch_size = int(df.target_batch_size)
         self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
-         # * self.get_completion_epoch()
+        
         self.atomic_bsz = 0 
         self.accum_steps = 0
         
@@ -81,7 +83,7 @@ class FoundationModelJob(BaseJob):
         elif isinstance(placement, collections.Iterable): 
             placcement = tuple([p for p in placement])
         else: 
-            print(placement, type(placement))
+            # print(placement, type(placement))
             raise NotImplementedError
         
         self.update_local_bsz(placement)
@@ -166,49 +168,101 @@ class FoundationModelJob(BaseJob):
         self.topology = None 
         self.status = JobState.PENDING
 
+    @property
+    def reweight(self, ): 
+        return 1
+    
+    
+    @property
+    def job_number(self, ): 
+        return 1 
+    
+    @property
+    def base_weight_scale(self, ):
+        return 1
+
 
 
 class TransferFoundationModelJob(FoundationModelJob): 
     __alias__ = 'transfer_foundation_model' 
-    def __init__(self, previous_model, current_model, **kwargs): 
-        self.previous_model = previous_model
-        self.current_model = current_model 
-        for attr in dir(self.current_model): 
-            instance = getattr(self.current_model, attr)
-            setattr(self, attr, instance)
+    def __init__(self, modelA, modelB, **kwargs): 
+        self.modelA = modelA
+        self.modelB = modelB 
+        for attr in dir(self.modelB): 
+            if not attr.startswith('__') and not hasattr(self, attr): 
+                if attr in ['reweight', 'job_number', 'base_weight_scale']: continue
+                instance = getattr(self.modelA, attr)
+                setattr(self, attr, instance)
+
+        self.name = 'transfer_{}_{}'.format(self.modelA.name, self.modelB.name)
+        self.status = JobState.PENDING
         self.max_progress = self.application.progress_per_epoch * \
-                self.application.get_transfer_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
+                self.application.get_completion_epoch(transfer=True, taskA=self.modelA.application.task_name, 
+                                                        taskB=self.modelB.application.task_name, target_metric=self.target_metric)
 
-
-
-class MergeFoundationModelJob(BaseJob): 
-    __alias__ = 'merge_foundation_model' 
-    def __init__(self, fm_list: List[FoundationModelJob], submission_time: int): 
-        assert len(fm_list) >= 2, 'at lease merge two `FM` tasks'
-        super(MergeFoundationModelJob, self).__init__(name='-'.join([str(fm.name) for fm in fm_list]), application=fm_list[0].application.name, submission_time=submission_time)
-        self.fm_list = fm_list
-        merge_data_scale = sum([fm.application.data_scale for fm in fm_list])
-        self.data_scale = merge_data_scale
-        p0 = -6761
-        p1 = 2327
-        
-        self.target_iteration = int(math.ceil(p0 + p1 * np.log(self.data_scale)))
-        for fm_job in fm_list: 
-            iteration  = int(math.ceil(p0 + p1 * np.log(fm_job.application.data_scale)))
-            data_scale = fm_job.application.data_scale
-            print('iteration {}, data scale {}, true iteration {}'.format(iteration, data_scale, fm_job.target_iteration))
-        print('combined iteration {}, combined data scale {}'.format(self.target_iteration, self.data_scale))
-        # import pdb; pdb.set_trace() 
-
-        FM = fm_list[0]
-        self.target_batch_size = FM.target_batch_size
-        self.application = FoundationModelApplication(FM.application.name, self.data_scale, self.target_iteration)
-
-        self.elastic = True 
-        self.rescale_time = self.application.get_context_switch_overhead(1, pipeline=False)
-        self.placement = None 
-        self.preemptible = True 
+    @property
+    def reweight(self, ): 
+        return 1
     
+    
+    @property
+    def job_number(self, ): 
+        return 1 
+    
+    @property
+    def base_weight_scale(self, ):
+        return 1
+
+
+class MtaskFoundationModelJob(FoundationModelJob): 
+    __alias__ = 'mtask_foundation_model' 
+    def __init__(self, modelA, modelB, **kwargs): 
+        assert modelA.application.query_index() != modelB.application.query_index(), 'both should not equal'
+        if modelA.application.query_index() < modelB.application.query_index(): 
+            self.modelA, self.modelB = modelA, modelB 
+        else: 
+            self.modelA, self.modelB = modelB, modelA
+
+        for attr in dir(self.modelB): 
+            if not attr.startswith('__') and not hasattr(self, attr): 
+                if attr in ['reweight', 'job_number', 'base_weight_scale']: continue
+                instance = getattr(self.modelA, attr)
+                setattr(self, attr, instance)
+        
+        self.name = 'mtask_{}_{}'.format(self.modelA.name, self.modelB.name)
+        self.placement = None 
+        self.status = JobState.PENDING
+        self.target_metric = (self.modelA.target_metric, self.modelB.target_metric)
+        self.max_num_gpus = self.modelA.max_num_gpus + self.modelB.max_num_gpus 
+        self.target_num_gpus = None
+        progress_per_epoch = (self.modelA.application.progress_per_epoch + self.modelB.application.progress_per_epoch)
+        epochA = self.modelA.application.get_completion_epoch(mtask=True, taskA=self.modelA.application.task_name, 
+                                                        taskB=self.modelB.application.task_name, target_metric=self.modelA.target_metric) 
+        epochB = self.modelB.application.get_completion_epoch(mtask=True, taskA=self.modelA.application.task_name, 
+                                                        taskB=self.modelB.application.task_name, target_metric=self.modelB.target_metric) 
+        self.training_epochs = max(epochA, epochB)
+        self.max_progress = self.training_epochs * progress_per_epoch
+        self.srtf_progress = self.modelA.max_progress + self.modelB.max_progress + min(self.modelA.max_progress, self.modelB.max_progress)
+        self.target_batch_size = self.modelA.target_batch_size + self.modelB.target_batch_size
+        self.atomic_bsz = 0 
+        self.accum_steps = 0
+        
+
+    def split_after_complete(self, ): 
+        for fm_job in [self.modelA, self.modelB]: 
+            
+            fm_job.attained_service = self.attained_service 
+            fm_job.placement = self.placement 
+            fm_job.status = self.status 
+
+            fm_job.completion_time = self.completion_time
+            fm_job.staying_time = fm_job.pending_time + self.staying_time 
+            fm_job.running_time = self.running_time 
+            fm_job.pending_time = fm_job.pending_time + self.pending_time
+            fm_job.num_restarts = self.num_restarts 
+
+        return [self.modelA, self.modelB]
+
 
     def step(self, seconds, **kwargs):
         if not self.placement:
@@ -225,56 +279,34 @@ class MergeFoundationModelJob(BaseJob):
         seconds -= delay 
 
         self.status = JobState.RUNNING
-        if self.progress < self.application.max_progress: 
+        if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
-            iteration_per_time = self.application.get_throughput(placement, self.target_batch_size)
-            delta_progress = min(seconds * iteration_per_time, self.application.max_progress - self.progress) 
-            delta_seconds = round(float(delta_progress / iteration_per_time)) 
+            self.update_local_bsz(placement) 
+            
+            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+            accum_time = step_time - sync_time
+            total_time = step_time + accum_time * self.accum_steps
+            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
+
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
             self.progress += delta_progress
-            if self.progress >= self.application.max_progress: 
+            if abs(self.progress - self.max_progress) <= 0.1: 
                 self.completion_time = self.staying_time + delta_seconds + self.submission_time 
             self.attained_service += delta_seconds * sum(placement) 
         
         self.staying_time += delta_seconds 
         self.running_time += delta_seconds
 
-
-
-    def reallocate(self, placement, **kwargs):
-        if placement:
-            self.placement = tuple(placement)
-            if kwargs.get('topology') is not None: 
-                self.topology = kwargs.get('topology')
-
-            if self.num_restarts is None:
-                self.num_restarts = 0
-            else:
-                self.num_restarts += 1
-            kwargs['pipeline'] = False
-            if kwargs.get('pipeline', False): 
-                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=True)
-            else: 
-                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
-
-        else:  # De-allocate all resources.
-            self.placement = ()
-
-    def release_resource(self,): 
-        self.placement = None 
-        self.topology = None 
-        self.status = JobState.PENDING
+    @property
+    def reweight(self, ): 
+        return self.srtf_progress / (self.max_progress * 2)
     
-    def split_after_complete(self, ): 
-        for fm_job in self.fm_list: 
-            
-            fm_job.attained_service = self.attained_service 
-            fm_job.placement = self.placement 
-            fm_job.status = self.status 
-
-            fm_job.completion_time = self.completion_time
-            fm_job.staying_time = fm_job.pending_time + self.staying_time 
-            fm_job.running_time = self.running_time 
-            fm_job.pending_time = fm_job.pending_time + self.pending_time
-            fm_job.num_restarts = self.num_restarts 
-
-        return self.fm_list
+    
+    @property
+    def job_number(self, ): 
+        return 1 
+    
+    @property
+    def base_weight_scale(self, ):
+        return 0.5

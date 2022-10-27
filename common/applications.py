@@ -121,6 +121,10 @@ def apply_transform(task_name, identifier):
     return task_name.replace('/', identifier)
 
 
+def query_index(dataset): 
+    all_datasets = NLP_Datasets if dataset in NLP_Datasets else CV_Datasets
+    identifier = '#'
+    return all_datasets.index(dataset.replace(identifier, '/'))
 
 
 class TransferTaskingInfo(): 

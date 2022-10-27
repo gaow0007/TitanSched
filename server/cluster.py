@@ -121,6 +121,9 @@ class Cluster(object):
 
 
     def release_job_resource(self, job, status='END'):
+        if not hasattr(job, 'topology'): 
+            import pdb; pdb.set_trace() 
+            
         for placement in job.topology:
             assert 'switch' in placement and 'nodes' in placement
             found = False
