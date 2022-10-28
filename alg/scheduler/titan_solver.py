@@ -7,8 +7,9 @@ import math
 
 
 class TitanMultiTaskAdaptivitySolver(object):
-    def __init__(self, method):
+    def __init__(self, method, logger):
         self.method = method
+        self.logger = logger
                                                     
     def job_selection(self, required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, \
                             mtask_required_resource_list, mtask_weight_per_allication_list, mtask_equalivent_allocation_list, \
@@ -56,7 +57,7 @@ class TitanMultiTaskAdaptivitySolver(object):
             reference_allocation = mtask_equalivent_allocation_list[left]
             for j in range(left, len(mtask_equalivent_allocation_list)): 
                 if mtask_equalivent_allocation_list[j] != reference_allocation: 
-                    print('not equal between {} and {}'.format(mtask_equalivent_allocation_list[j], reference_allocation))
+                    self.logger.info('not equal between {} and {}'.format(mtask_equalivent_allocation_list[j], reference_allocation))
                     right = j
                     break 
             
@@ -126,9 +127,10 @@ class TitanMultiTaskAdaptivitySolver(object):
                 allocated_gpu_solution.append(0) 
         
         tot_resource_list = required_resource_list + mtask_required_resource_list
+        tot_allocation_list = equalivent_allocation_list + mtask_equalivent_allocation_list
         for k in range(var_len): 
             ident = 'mtask' if k > len(required_resource_list) else 'single'
-            print('k, {}, x {}, resource {}, ident {}, weight {}'.format(k, X[k].x, tot_resource_list[k], ident, tot_weight_list[k] ** power))
+            self.logger.info('k, {}, x {}, resource {}, ident {}, weight {}, alllocation {}'.format(k, X[k].x, tot_resource_list[k], ident, tot_weight_list[k], tot_allocation_list[k]))
         # print([X[k].x for k in range(var_len)])
         # print(required_resource_list + mtask_required_resource_list)
         multi_task = False 
@@ -145,6 +147,8 @@ class TitanMultiTaskAdaptivitySolver(object):
         # if multi_task: 
         #     self.logger.info("allocated_gpu_solution is {}".format(allocated_gpu_solution))
         #     import pdb; pdb.set_trace() 
+        self.logger.info("allocated_gpu_solution is {}".format(allocated_gpu_solution))
+        self.logger.info("total gpu {}".format(sum(allocated_gpu_solution)))
         # if sum(allocated_gpu_solution) > 0 and var_len > 30: 
         #     import pdb; pdb.set_trace() 
 

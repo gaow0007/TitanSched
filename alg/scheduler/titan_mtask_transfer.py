@@ -1,21 +1,21 @@
 import os, sys
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 import numpy as np 
-from client.job.foundation_model import FoundationModelJob, MtaskFoundationModelJob
+from client.job.foundation_model import FoundationModelJob, TransferFoundationModelJob
 from client.job.state import JobState
 
 
-def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_list, weight_per_allocation_list, equalivent_allocation_list):
-    mtask_jobs = list() 
-    number_of_mtask_training = 0 
+def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource_list, weight_per_allocation_list, equalivent_allocation_list):
+    transfer_jobs = list() 
+    number_of_transfer_training = 0 
 
     if len(self.pending_jobs) == 0: 
         return list(), list(), list(), list()
 
     for job in self.pending_jobs:
         if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx'): 
-            mtask_jobs.append(job)
-            number_of_mtask_training += 1
+            transfer_jobs.append(job)
+            number_of_transfer_training += 1
     max_equalivent_allocation_idx = max([job.equalivent_allocation_idx for job in runnable_jobs])
     
 

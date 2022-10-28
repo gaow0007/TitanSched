@@ -6,31 +6,43 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 
 for root in  'trace/'
 do 
+    # match="FM-"
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/`
     # for trace in FM-720-vit-large
     # for trace in FM-480-vit
-    # for trace in FM-320-vit-large
+    # for trace in debug
+    # for trace in FM-480-vit
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
             num_node_p_switch=8
             num_gpu_p_node=4
             scheduling_time_interval=60
-            add_ckpt=120
+            add_ckpt=30
             for multi_task_adaptivity in True False 
             do 
-                for schedule in titan # titan tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                 do 
                     extra_cmd=""
+                    ident="${schedule}_${trace}"
+                    save_log_dir=result/$schedule/$trace
+                    if [[ $schedule != "titan" &&  $multi_task_adaptivity == "True" ]]; 
+                    then 
+                        continue 
+                    fi 
+
+                    
                     if [[ $schedule == "titan" ]] ;
                     then 
                         # 0.391540 (hour) for normal scheduling 
                         # 1.164363 for normal scheduling
                         extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity" # 0.302186
+                        ident="${schedule}_${trace}_${multi_task_adaptivity}"
+                        save_log_dir=result/$schedule/$trace-${multi_task_adaptivity}
                         # extra_cmd=""
-                        scheduling_time_interval=600
+                        scheduling_time_interval=300
                     fi 
 
                     if [[ $schedule == "themis" ]] ;
@@ -41,7 +53,7 @@ do
 
                     job_type="foundation_model"
                     $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
-                                --save_log_dir=result/$schedule/$trace --ident="${schedule}_${trace}_${multi_task_adaptivity}" \
+                                --save_log_dir=${save_log_dir} --ident=$ident \
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                                 --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
                                 --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} &

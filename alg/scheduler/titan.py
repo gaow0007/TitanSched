@@ -21,7 +21,7 @@ class TitanScheduler(BaseScheduler):
         self.save_dir = kwargs.get('save_dir', 'result/')
         self.multi_task_adaptivity = kwargs.get('multi_task_adaptivity', False)
         if self.multi_task_adaptivity: # 0.391540
-            self.titan_solver = TitanMultiTaskAdaptivitySolver(method='multi-task-adaptivity')
+            self.titan_solver = TitanMultiTaskAdaptivitySolver(method='multi-task-adaptivity', logger=self.logger)
         else: # 0.391540
             self.titan_solver = TitanSolver(method='naive')
         self.solver_time_list = list() 
@@ -123,17 +123,18 @@ class TitanScheduler(BaseScheduler):
                 if isinstance(job, MtaskFoundationModelJob): 
                     need_remove_jobs.append(job)
                     single_job_list = job.split_after_complete() 
+                    self.logger.info('mtask running job {} is finished at time {}'.format(job.name, cur_time))
                     for single_job in single_job_list: 
                         # if single_job.name == 'vit-large@imagenet-split-2-22': 
                         #     import pdb; pdb.set_trace() 
                         single_job.status = JobState.END
                         self.completion_jobs.append(single_job) 
-                        self.logger.info('running job {} is finished at time {}'.format(single_job.name, cur_time))
+                        self.logger.info('running job {} is finished at time {}, duration is {}'.format(single_job.name, cur_time, job.completion_time - job.submission_time))
                 else: 
                     job.status = JobState.END
                     self.completion_jobs.append(job)
                     need_remove_jobs.append(job)
-                    self.logger.info('running job {} is finished at time {}'.format(job.name, cur_time))
+                    self.logger.info('running job {} is finished at time {}, duration is {}'.format(job.name, cur_time, job.completion_time - job.submission_time))
 
         self.logger.info("GPU utilization: {}".format(used_gpus))
         for job in need_remove_jobs:
@@ -185,6 +186,7 @@ class TitanScheduler(BaseScheduler):
             
         if len(runnable_jobs) > 0: 
             fair_placement = max(1, int(total_gpu_num / sum([job.job_number for job in runnable_jobs])))
+            self.logger.info("fair_placement == {}".format(fair_placement))
 
         for idx, job in enumerate(runnable_jobs):
             job.equalivent_allocation_idx = idx 

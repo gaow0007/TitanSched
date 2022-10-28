@@ -241,7 +241,8 @@ class MtaskFoundationModelJob(FoundationModelJob):
         epochB = self.modelB.application.get_completion_epoch(mtask=True, taskA=self.modelA.application.task_name, 
                                                         taskB=self.modelB.application.task_name, target_metric=self.modelB.target_metric) 
         self.training_epochs = max(epochA, epochB)
-        self.max_progress = self.training_epochs * progress_per_epoch
+        # self.max_progress = self.training_epochs * progress_per_epoch
+        self.max_progress = self.modelA.application.progress_per_epoch * epochA + self.modelB.application.progress_per_epoch * epochB
         self.srtf_progress = self.modelA.max_progress + self.modelB.max_progress + min(self.modelA.max_progress, self.modelB.max_progress)
         self.target_batch_size = self.modelA.target_batch_size + self.modelB.target_batch_size
         self.atomic_bsz = 0 
