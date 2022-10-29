@@ -39,14 +39,14 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
             jobB = mtask_jobs[idxB]
             if jobA.application.task_name != jobB.application.task_name: 
                 mtask_job = MtaskFoundationModelJob(jobA, jobB)
-                if 'snli' in mtask_job.name: 
-                    self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))
-
+                # if 'snli' in mtask_job.name: 
                 if mtask_job.reweight < 1.1: continue  
-                fair_remaining_time = max(mtask_job.predict_remaining_time(min(fair_placement * mtask_job.job_number, job.max_num_gpus)), self.scheduling_time_interval)
+                self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))
+                fair_remaining_time = max(mtask_job.predict_remaining_time(min(fair_placement * mtask_job.job_number, mtask_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
                 mtask_job_list.append(mtask_job)
                 forbidden_job_id_list = [jobA.equalivent_allocation_idx, jobB.equalivent_allocation_idx]
+                mtask_job.equalivent_allocation_idx = forbidden_job_id_list
 
                 for gpu_num in candidate_gpus: 
                     if gpu_num == 0: 

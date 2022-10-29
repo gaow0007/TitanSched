@@ -6,7 +6,7 @@ from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS
 import collections 
 from .base import BaseJob
 from .state import JobState
-
+import copy
 
 
 
@@ -191,18 +191,34 @@ class TransferFoundationModelJob(FoundationModelJob):
         for attr in dir(self.modelB): 
             if not attr.startswith('__') and not hasattr(self, attr): 
                 if attr in ['reweight', 'job_number', 'base_weight_scale']: continue
-                instance = getattr(self.modelA, attr)
-                setattr(self, attr, instance)
+                instance = getattr(self.modelB, attr)
+                setattr(self, attr, copy.deepcopy(instance))
 
         self.name = 'transfer_{}_{}'.format(self.modelA.name, self.modelB.name)
         self.status = JobState.PENDING
-        self.max_progress = self.application.progress_per_epoch * \
-                self.application.get_completion_epoch(transfer=True, taskA=self.modelA.application.task_name, 
-                                                        taskB=self.modelB.application.task_name, target_metric=self.target_metric)
+        self.max_progress = self.modelB.application.progress_per_epoch * \
+                self.modelB.application.get_completion_epoch(transfer=True, taskA=self.modelA.application.task_name, 
+                                                        taskB=self.modelB.application.task_name, target_metric=self.modelB.target_metric)
+
+
+    def split_after_complete(self, ): 
+        for fm_job in [self.modelB]: 
+            
+            fm_job.attained_service = self.attained_service 
+            fm_job.placement = self.placement 
+            fm_job.status = self.status 
+
+            fm_job.completion_time = self.completion_time
+            fm_job.staying_time = fm_job.pending_time + self.staying_time 
+            fm_job.running_time = self.running_time 
+            fm_job.pending_time = fm_job.pending_time + self.pending_time
+            fm_job.num_restarts = self.num_restarts 
+
+        return self.modelB
 
     @property
     def reweight(self, ): 
-        return 1
+        return self.modelB.max_progress / self.max_progress 
     
     
     @property
@@ -212,6 +228,129 @@ class TransferFoundationModelJob(FoundationModelJob):
     @property
     def base_weight_scale(self, ):
         return 1
+
+
+class TemporalTransferFoundationModelJob(FoundationModelJob): 
+    __alias__ = 'temporal_transfer_foundation_model' 
+    def __init__(self, modelA, modelB, **kwargs): 
+        self.modelA = modelA
+        self.modelB = modelB 
+        for attr in dir(self.modelA): 
+            if not attr.startswith('__') and not hasattr(self, attr): 
+                if attr in ['reweight', 'job_number', 'base_weight_scale', 'step']: continue
+                instance = getattr(self.modelA, attr)
+                setattr(self, attr, copy.deepcopy(instance))
+
+        self.name = 'temporal_transfer_{}_{}'.format(self.modelA.name, self.modelB.name)
+        self.status = JobState.PENDING
+        self.max_progress = self.modelA.max_progress +  self.modelB.application.progress_per_epoch * \
+                self.modelB.application.get_completion_epoch(transfer=True, taskA=self.modelA.application.task_name, 
+                                                        taskB=self.modelB.application.task_name, target_metric=self.target_metric)
+        self.middle_max_progress = self.modelA.max_progress
+        self.middle_completion_time = None 
+
+
+    def step(self, seconds, **kwargs):
+        if not self.placement:
+            # No resources are allocated to this job.
+            if self.completion_time is None: 
+                self.staying_time += seconds
+                self.status = JobState.PENDING
+                self.pending_time += seconds 
+            self.staying_time += seconds 
+            return
+        
+        delay = min(self.rescale_time, seconds)
+        self.rescale_time -= delay 
+        seconds -= delay 
+
+        self.status = JobState.RUNNING
+        if self.progress < self.middle_max_progress and self.middle_completion_time is None: 
+            placement = tuple(filter(None, self.placement))
+            self.update_local_bsz(placement) 
+            
+            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+            accum_time = step_time - sync_time
+            total_time = step_time + accum_time * self.accum_steps
+            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
+
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
+            self.progress += delta_progress
+            if abs(self.progress - self.middle_max_progress) <= 0.1: 
+                self.middle_completion_time = self.staying_time + delta_seconds + self.submission_time 
+                self.target_batch_size = self.modelB.target_batch_size
+
+            self.attained_service += delta_seconds * sum(placement) 
+            if self.middle_completion_time is not None: 
+                self.staying_time += delta_seconds 
+                self.running_time += delta_seconds
+                self.register_complete_job(self.modelA)
+            seconds -= delta_seconds
+
+        if abs(self.progress - self.max_progress) > 0.1 and seconds > 0 and self.middle_completion_time is not None: 
+            placement = tuple(filter(None, self.placement))
+            self.update_local_bsz(placement) 
+            
+            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+            accum_time = step_time - sync_time
+            total_time = step_time + accum_time * self.accum_steps
+            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
+
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
+            self.progress += delta_progress
+            if abs(self.progress - self.max_progress) <= 0.1: 
+                self.completion_time = self.staying_time + delta_seconds + self.submission_time 
+
+            if self.middle_completion_time is not None: 
+                self.staying_time += delta_seconds 
+                self.running_time += delta_seconds
+                self.register_complete_job(self.modelB)
+
+            self.attained_service += delta_seconds * sum(placement) 
+        
+        
+        self.staying_time += delta_seconds 
+        self.running_time += delta_seconds
+
+    def register_complete_job(self, fm_job, completion_time): 
+        fm_job.attained_service = self.attained_service 
+        fm_job.placement = self.placement 
+        fm_job.status = self.status 
+
+        fm_job.completion_time = completion_time
+        fm_job.staying_time = fm_job.pending_time + self.staying_time 
+        fm_job.running_time = self.running_time 
+        fm_job.pending_time = fm_job.pending_time + self.pending_time
+        fm_job.num_restarts = self.num_restarts 
+
+        # clean 
+        self.attained_service = 0
+        self.running_time = 0 
+        self.pending_time = self.staying_time
+        self.num_restarts = 0 
+
+
+    def split_after_complete(self, ): 
+        return [self.modelA, self.modelB]
+
+    @property
+    def reweight(self, ): 
+        return self.modelB.max_progress / self.max_progress 
+    
+    
+    @property
+    def job_number(self, ): 
+        return 1 
+    
+    @property
+    def base_weight_scale(self, ):
+        if self.middle_completion_time is None: 
+            return 2 
+        elif self.completion_time is None: 
+            return 1 
+        return 0
 
 
 class MtaskFoundationModelJob(FoundationModelJob): 
@@ -227,7 +366,7 @@ class MtaskFoundationModelJob(FoundationModelJob):
             if not attr.startswith('__') and not hasattr(self, attr): 
                 if attr in ['reweight', 'job_number', 'base_weight_scale']: continue
                 instance = getattr(self.modelA, attr)
-                setattr(self, attr, instance)
+                setattr(self, attr, copy.deepcopy(instance))
         
         self.name = 'mtask_{}_{}'.format(self.modelA.name, self.modelB.name)
         self.placement = None 
@@ -263,41 +402,7 @@ class MtaskFoundationModelJob(FoundationModelJob):
             fm_job.num_restarts = self.num_restarts 
 
         return [self.modelA, self.modelB]
-
-
-    def step(self, seconds, **kwargs):
-        if not self.placement:
-            # No resources are allocated to this job.
-            if self.completion_time is None: 
-                self.staying_time += seconds
-                self.status = JobState.PENDING
-                self.pending_time += seconds 
-            self.staying_time += seconds 
-            return
-        
-        delay = min(self.rescale_time, seconds)
-        self.rescale_time -= delay 
-        seconds -= delay 
-
-        self.status = JobState.RUNNING
-        if abs(self.progress - self.max_progress) > 0.1: 
-            placement = tuple(filter(None, self.placement))
-            self.update_local_bsz(placement) 
-            
-            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
-            accum_time = step_time - sync_time
-            total_time = step_time + accum_time * self.accum_steps
-            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
-
-            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
-            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
-            self.progress += delta_progress
-            if abs(self.progress - self.max_progress) <= 0.1: 
-                self.completion_time = self.staying_time + delta_seconds + self.submission_time 
-            self.attained_service += delta_seconds * sum(placement) 
-        
-        self.staying_time += delta_seconds 
-        self.running_time += delta_seconds
+    
 
     @property
     def reweight(self, ): 

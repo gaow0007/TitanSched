@@ -203,7 +203,7 @@ def main(opt, logger):
                                         lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
     elif opt.schedule == 'titan': 
         scheduler = TitanScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
-                                    logger=logger, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir, multi_task_adaptivity=opt.multi_task_adaptivity)
+                                    logger=logger, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir, multi_task_adaptivity=opt.multi_task_adaptivity, temporal_transferability=opt.temporal_transferability)
     elif opt.schedule == 'optimus': 
         scheduler = OptimusScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, scheduling_time_interval=opt.scheduling_time_interval, 

@@ -48,7 +48,7 @@ do
                     if [[ $schedule == "themis" ]] ;
                     then 
                         # extra_cmd="--multi_task_adaptivity"
-                        extra_cmd=" --lease_term_interval=600"
+                        extra_cmd=" --lease_term_interval=300"
                     fi 
 
                     job_type="foundation_model"

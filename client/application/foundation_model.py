@@ -175,7 +175,7 @@ class FoundationModelApplication(object):
         elif kwargs.get('mtask') == True: 
             insert_key = FMStats.mtask_info.generate_dataset_key(kwargs.get('taskA'), kwargs.get('taskB'))
             performance_traj = FMStats.mtask_info.performance_report[self.model_name][insert_key] 
-            print(performance_traj.keys())
+            # print(performance_traj.keys())
             metric_key = '{}_{}'.format(self.task_name, self.metric_key)
             metric_info = performance_traj[metric_key]
             epoch_info = performance_traj[metric_key + '_epoch']

@@ -60,6 +60,7 @@ class Options:
         parser.add_argument('--metrics', default=False, type=bool, help="log metrics")
         parser.add_argument('--metrics_path', default='metrics.csv', type=str, help="log metrics destination")
         parser.add_argument('--multi_task_adaptivity', default=False, type=ast.literal_eval, help="whether titan considers multi-task adaptivity")
+        parser.add_argument('--temporal_transferability', default=False, type=ast.literal_eval, help="whether titan considers temporal transferability")
         parser.add_argument('--add_ckpt', default=30, type=int, help='checkpoint overhead for simulation')
         self.args = parser.parse_args()
     

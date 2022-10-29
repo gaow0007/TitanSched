@@ -1,12 +1,13 @@
 import os, sys
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 import numpy as np 
-from client.job.foundation_model import FoundationModelJob, MtaskFoundationModelJob, TransferFoundationModelJob
+from client.job.foundation_model import FoundationModelJob, MtaskFoundationModelJob, TemporalTransferFoundationModelJob, TransferFoundationModelJob
 from client.job.state import JobState
 from .base import BaseScheduler
 from .schedutils import resource_summary, schedule_summary
 from .titan_solver import TitanSolver, TitanMultiTaskAdaptivitySolver
 from .titan_mtask import mtask_builder
+from .titan_transfer import transfer_builder, temporal_transfer_builder
 
 
 class TitanScheduler(BaseScheduler):
@@ -24,16 +25,17 @@ class TitanScheduler(BaseScheduler):
             self.titan_solver = TitanMultiTaskAdaptivitySolver(method='multi-task-adaptivity', logger=self.logger)
         else: # 0.391540
             self.titan_solver = TitanSolver(method='naive')
+        self.temporal_transferability = (self.multi_task_adaptivity and kwargs.get('temporal_transferability', False))
         self.solver_time_list = list() 
     
 
     def debug_cluster(self, cur_time): 
         self.logger.info('event {}, pending {}, running {}, completion {}'.format(len(self.event_jobs), len(self.pending_jobs), len(self.running_jobs), len(self.completion_jobs)))
-        tot_jobs = self.event_jobs + self.pending_jobs + self.running_jobs + self.completion_jobs
-        if len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) + len(self.completion_jobs) != 160: 
-            for job in self.job_manager.job_list: 
-                if job not in tot_jobs: 
-                    import pdb; pdb.set_trace() 
+        # tot_jobs = self.event_jobs + self.pending_jobs + self.running_jobs + self.completion_jobs
+        # if len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) + len(self.completion_jobs) != 160: 
+        #     for job in self.job_manager.job_list: 
+        #         if job not in tot_jobs: 
+        #             import pdb; pdb.set_trace() 
 
     def finish_all_jobs(self, ): 
         return len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) == 0
@@ -62,7 +64,7 @@ class TitanScheduler(BaseScheduler):
         for job in jobs:
             if not self.try_allocate_resoure(job): 
                 continue 
-            self.logger.info('pending job {} is resumed at time {}'.format(job.name, cur_time))
+            self.logger.info('pending job {} is resumed at time {}, placement {}'.format(job.name, cur_time, job.placement))
 
 
     
@@ -129,7 +131,20 @@ class TitanScheduler(BaseScheduler):
                         #     import pdb; pdb.set_trace() 
                         single_job.status = JobState.END
                         self.completion_jobs.append(single_job) 
-                        self.logger.info('running job {} is finished at time {}, duration is {}'.format(single_job.name, cur_time, job.completion_time - job.submission_time))
+                        self.logger.info('running job {} is finished at time {}, duration is {}'.format(single_job.name, cur_time, single_job.completion_time - single_job.submission_time))
+                elif isinstance(job, TransferFoundationModelJob): 
+                    need_remove_jobs.append(job)
+                    self.logger.info('single_transfer running job {} is finished at time {}'.format(job.name, cur_time))
+                    single_job = job.split_after_complete() 
+                    single_job.status = JobState.END
+                    self.completion_jobs.append(single_job) 
+                elif isinstance(job, TemporalTransferFoundationModelJob): 
+                    need_remove_jobs(job)
+                    single_job_list = job.split_after_complete() 
+                    for single_job in single_job_list: 
+                        single_job.status = JobState.END
+                        self.completion_jobs.append(single_job) 
+                        self.logger.info('running job {} is finished at time {}, duration is {}'.format(single_job.name, cur_time, single_job.completion_time - single_job.submission_time))
                 else: 
                     job.status = JobState.END
                     self.completion_jobs.append(job)
@@ -237,16 +252,35 @@ class TitanScheduler(BaseScheduler):
             mtask_required_resource_list, mtask_weight_per_allication_list, mtask_equalivent_allocation_list, mtask_jobs = \
                 mtask_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
                     weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
-
+            
+            transfer_required_resource_list, transfer_weight_per_allication_list, \
+                transfer_equalivent_allocation_list, transfer_jobs = \
+                list(), list(), list(), list() 
+            temporal_transfer_required_resource_list, temporal_transfer_weight_per_allication_list, \
+                temporal_transfer_equalivent_allocation_list, temporal_transfer_jobs = \
+                list(), list(), list(), list() 
+            if self.temporal_transferability: 
+                temporal_transfer_required_resource_list, temporal_transfer_weight_per_allication_list, \
+                    temporal_transfer_equalivent_allocation_list, temporal_transfer_jobs = temporal_transfer_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
+                        weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
+            else: 
+                transfer_required_resource_list, transfer_weight_per_allication_list, transfer_equalivent_allocation_list, transfer_jobs = \
+                    transfer_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
+                        weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
 
 
         power = -1
-        normalized_weight_per_allocation_list = self.normalized_weight(weight_per_allocation_list + (mtask_weight_per_allication_list if self.multi_task_adaptivity else []), power)
+        tot_weight_weight_per_allocation_list = mtask_weight_per_allication_list + transfer_weight_per_allication_list + temporal_transfer_weight_per_allication_list
+        normalized_weight_per_allocation_list = self.normalized_weight(weight_per_allocation_list + (tot_weight_weight_per_allocation_list if self.multi_task_adaptivity else []), power)
         if self.multi_task_adaptivity: 
             print(len(normalized_weight_per_allocation_list), len(weight_per_allocation_list), len(mtask_weight_per_allication_list))
             weight_per_allocation_list = normalized_weight_per_allocation_list[:len(weight_per_allocation_list)]
-            assert len(mtask_weight_per_allication_list) == len(normalized_weight_per_allocation_list[len(weight_per_allocation_list):])
-            mtask_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list):]
+            assert len(mtask_weight_per_allication_list) == len(normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)])
+            mtask_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)]
+            if self.temporal_transferability:
+                temporal_transfer_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list)+len(mtask_weight_per_allication_list):]
+            else:  
+                transfer_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list)+len(mtask_weight_per_allication_list):]
             
         else: 
             weight_per_allocation_list = normalized_weight_per_allocation_list
@@ -254,7 +288,9 @@ class TitanScheduler(BaseScheduler):
         if self.multi_task_adaptivity: 
             unique_job_num = len(runnable_jobs)
             mtask_unique_job_num = len(mtask_jobs)
-            print([job.name for job in mtask_jobs])
+            transfer_unique_job_num = len(transfer_jobs)
+            temporal_transfer_unique_job_num = len(temporal_transfer_jobs)
+            # print([job.name for job in mtask_jobs])
             solution = self.titan_solver.job_selection(required_resource_list=required_resource_list, 
                                                     weight_per_allocation_list=weight_per_allocation_list, 
                                                     equalivent_allocation_list=equalivent_allocation_list, 
@@ -263,6 +299,14 @@ class TitanScheduler(BaseScheduler):
                                                     mtask_weight_per_allication_list=mtask_weight_per_allication_list, \
                                                     mtask_equalivent_allocation_list=mtask_equalivent_allocation_list, \
                                                     mtask_unique_job_num=mtask_unique_job_num, 
+                                                    transfer_required_resource_list=transfer_required_resource_list, \
+                                                    transfer_weight_per_allication_list=transfer_weight_per_allication_list, \
+                                                    transfer_equalivent_allocation_list=transfer_equalivent_allocation_list, \
+                                                    transfer_unique_job_num=transfer_unique_job_num, 
+                                                    temporal_transfer_required_resource_list=temporal_transfer_required_resource_list, \
+                                                    temporal_transfer_weight_per_allication_list=temporal_transfer_weight_per_allication_list, \
+                                                    temporal_transfer_equalivent_allocation_list=temporal_transfer_equalivent_allocation_list, \
+                                                    temporal_transfer_unique_job_num=temporal_transfer_unique_job_num, 
                                                     cluster_capacity=cluster_capacity, 
                                                     max_seconds=30, power=power)
         else: 
@@ -311,6 +355,20 @@ class TitanScheduler(BaseScheduler):
                     should_run_jobs.append(mtask_job)
                     mtask_job.target_num_gpus = solution[unique_job_num + idx]
 
+            if self.temporal_transferability: 
+                for idx, temporal_transfer_job in enumerate(temporal_transfer_jobs): 
+                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
+                        should_run_jobs.append(temporal_transfer_job)
+                        temporal_transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
+            else: 
+                for idx, transfer_job in enumerate(transfer_jobs): 
+                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
+                        should_run_jobs.append(transfer_job)
+                        transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
+
+            
+                
+
 
         self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
         self.place_jobs(should_run_jobs, cur_time)
@@ -335,8 +393,8 @@ class TitanScheduler(BaseScheduler):
         self.logger.info('running jobs progress        {}'.format([job.max_progress - job.progress for job in self.running_jobs]))
 
         # for job in self.pending_jobs: 
-        #     if cur_time == 600: 
-        #         if job.name == 'vit@frgfm#imagenette-0': 
+        #     if cur_time == 900: 
+        #         if job.name == 'roberta-large@mnli-7': 
         #             import pdb; pdb.set_trace() 
 
         if self.multi_task_adaptivity:
@@ -344,8 +402,28 @@ class TitanScheduler(BaseScheduler):
                 print('job name {}, job placement {}'.format(job.name, job.placement))
                 if job.placement is not None:
                     self.logger.info('remove job A {}, job B {}'.format(job.modelA.name, job.modelB.name))
+                    self.logger.info('mtask job equalivent_allocation_idx {}'.format(job.equalivent_allocation_idx))
                     self.pending_jobs.remove(job.modelA)
                     self.pending_jobs.remove(job.modelB)
+            
+            for job in transfer_jobs: 
+                if job.placement is not None: 
+                    
+                    self.logger.info('transfer job A {}, job B {}'.format(job.modelA.name, job.modelB.name))
+                    self.logger.info('transfer job equalivent_allocation_idx {}'.format(job.equalivent_allocation_idx))
+                    if job.modelB not in self.pending_jobs: 
+                        import pdb; pdb.set_trace() 
+                    self.pending_jobs.remove(job.modelB) 
+
+            for job in temporal_transfer_jobs: 
+                if job.placement is not None: 
+                    self.logger.info('transfer job A {}, job B {}'.format(job.modelA.name, job.modelB.name))
+                    self.logger.info('transfer job equalivent_allocation_idx {}'.format(job.equalivent_allocation_idx))
+                    if job.modelB not in self.pending_jobs: 
+                        import pdb; pdb.set_trace() 
+                    self.pending_jobs.remove(job.modelA)
+                    self.pending_jobs.remove(job.modelB) 
+                    
 
     def flush_jobs(self, prev_time, cur_time, status):
         if status == JobState.EVENT:
@@ -373,7 +451,7 @@ class TitanScheduler(BaseScheduler):
             self.flush_jobs(prev_time, cur_time, status=JobState.PENDING)
             self.flush_jobs(prev_time, cur_time, status=JobState.RUNNABLE)
             cur_time += self.scheduling_time_interval
-
+            self.debug_cluster(cur_time)
             # record resource statistics
             resource_summary(self)
         

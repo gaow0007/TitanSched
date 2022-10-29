@@ -10,15 +10,17 @@ class TitanMultiTaskAdaptivitySolver(object):
     def __init__(self, method, logger):
         self.method = method
         self.logger = logger
-                                                    
+
     def job_selection(self, required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, \
-                            mtask_required_resource_list, mtask_weight_per_allication_list, mtask_equalivent_allocation_list, \
-                            mtask_unique_job_num, cluster_capacity, max_seconds=1, power=1): 
+                            mtask_required_resource_list, mtask_weight_per_allication_list, mtask_equalivent_allocation_list, mtask_unique_job_num, \
+                            transfer_required_resource_list, transfer_weight_per_allication_list, transfer_equalivent_allocation_list, transfer_unique_job_num, \
+                            temporal_transfer_required_resource_list, temporal_transfer_weight_per_allication_list, temporal_transfer_equalivent_allocation_list, temporal_transfer_unique_job_num, \
+                            cluster_capacity, max_seconds=1, power=1): 
 
         m = Model(solver_name = CBC)
-        var_len = len(required_resource_list) + len(mtask_required_resource_list)
+        var_len = len(required_resource_list) + len(mtask_required_resource_list) + len(transfer_required_resource_list) + len(temporal_transfer_required_resource_list)
         X = [m.add_var(var_type=BINARY) for i in range(var_len)]
-        tot_weight_list = weight_per_allocation_list + mtask_weight_per_allication_list
+        tot_weight_list = weight_per_allocation_list + mtask_weight_per_allication_list + transfer_weight_per_allication_list + temporal_transfer_weight_per_allication_list
         if len(tot_weight_list) != var_len: 
             import pdb; pdb.set_trace() 
         # obj_list = [X[i] * tot_weight_list[i] for i in range(var_len)]
@@ -32,7 +34,7 @@ class TitanMultiTaskAdaptivitySolver(object):
 
 
         # m.objective = maximize(xsum(obj_list[i] for i in range(len(obj_list)))) 
-        tot_resource_list = required_resource_list + mtask_required_resource_list
+        tot_resource_list = required_resource_list + mtask_required_resource_list + transfer_required_resource_list + temporal_transfer_required_resource_list
         m += xsum(X[i] * tot_resource_list[i] for i in range(var_len)) <= cluster_capacity
 
         # single-task intra resource allocation constraint
@@ -68,11 +70,46 @@ class TitanMultiTaskAdaptivitySolver(object):
             # # print(mtask_equalivent_allocation_list[right] == reference_allocation)
             # print('mtask left {}, right {}'.format(left, right))
             m += xsum(X[j + len(required_resource_list)] for j in range(left, right)) == 1 # be careful about index shift 
-            print('constraint for mtask {}'.format([j + len(required_resource_list) for j in range(left, right)]))
+            # print('constraint for mtask {}'.format([j + len(required_resource_list) for j in range(left, right)]))
             merge_left_list.append(left)
             merge_right_list.append(right)
             left = right 
 
+        # transfer job intra job constraint 
+        start_index = len(required_resource_list) + len(mtask_required_resource_list)
+        transfer_left_list, transfer_right_list = list(), list() 
+        left, right = 0, 0
+        for i in range(transfer_unique_job_num): 
+            if left >= len(transfer_equalivent_allocation_list): 
+                import pdb; pdb.set_trace() 
+            reference_allocation = transfer_equalivent_allocation_list[left]
+            for j in range(left, len(transfer_equalivent_allocation_list)): 
+                if transfer_equalivent_allocation_list[j] != reference_allocation: 
+                    right = j 
+                    break 
+            if transfer_equalivent_allocation_list[j] == reference_allocation: right = j + 1 
+            m += xsum(X[j+start_index] for j in range(left, right)) == 1
+            transfer_left_list.append(left) 
+            transfer_right_list.append(right)
+            left = right 
+
+        # temporal transfer job intra job constraint
+        start_index = len(required_resource_list) + len(mtask_required_resource_list) + len(transfer_required_resource_list)
+        temporal_transfer_left_list, temporal_transfer_right_list = list(), list() 
+        left, right = 0, 0
+        for i in range(temporal_transfer_unique_job_num): 
+            if left >= len(temporal_transfer_equalivent_allocation_list): 
+                import pdb; pdb.set_trace() 
+            reference_allocation = temporal_transfer_equalivent_allocation_list[left]
+            for j in range(left, len(temporal_transfer_equalivent_allocation_list)): 
+                if temporal_transfer_equalivent_allocation_list[j] != reference_allocation: 
+                    right = j 
+                    break 
+            if temporal_transfer_equalivent_allocation_list[j] == reference_allocation: right = j + 1 
+            m += xsum(X[j+start_index] for j in range(left, right)) == 1
+            temporal_transfer_left_list.append(left) 
+            temporal_transfer_right_list.append(right)
+            left = right 
 
         # single-task and mult-task resource allocation constraint
         for i in range(unique_job_num): 
@@ -86,9 +123,18 @@ class TitanMultiTaskAdaptivitySolver(object):
             for mtask_i in range(len(mtask_required_resource_list)): 
                 if reference_single_allocation in mtask_equalivent_allocation_list[mtask_i] and mtask_required_resource_list[mtask_i] != 0: 
                     conflict_list.append(mtask_i + single_length)
+            
+            mtask_length = len(mtask_required_resource_list)
+            for transfer_i in range(len(transfer_required_resource_list)): 
+                if reference_single_allocation in transfer_equalivent_allocation_list[transfer_i] and transfer_required_resource_list[transfer_i] != 0: 
+                    conflict_list.append(transfer_i + mtask_length + single_length)
+            
 
+            transfer_length = len(transfer_required_resource_list)
+            for temporal_transfer_i in range(len(temporal_transfer_equalivent_allocation_list)): 
+                if reference_single_allocation in temporal_transfer_equalivent_allocation_list[temporal_transfer_i] and temporal_transfer_required_resource_list[temporal_transfer_i] != 0: 
+                    conflict_list.append(temporal_transfer_i + mtask_length + single_length + transfer_length)
             m += xsum(X[j] for j in conflict_list) <= 1
-                    
 
         # # single-task and mult-task resource allocation constraint
         # for i in range(mtask_unique_job_num): 
@@ -126,13 +172,6 @@ class TitanMultiTaskAdaptivitySolver(object):
             if not allocated: 
                 allocated_gpu_solution.append(0) 
         
-        tot_resource_list = required_resource_list + mtask_required_resource_list
-        tot_allocation_list = equalivent_allocation_list + mtask_equalivent_allocation_list
-        for k in range(var_len): 
-            ident = 'mtask' if k > len(required_resource_list) else 'single'
-            self.logger.info('k, {}, x {}, resource {}, ident {}, weight {}, alllocation {}'.format(k, X[k].x, tot_resource_list[k], ident, tot_weight_list[k], tot_allocation_list[k]))
-        # print([X[k].x for k in range(var_len)])
-        # print(required_resource_list + mtask_required_resource_list)
         multi_task = False 
         for i in range(mtask_unique_job_num): 
             allocated = False 
@@ -144,6 +183,43 @@ class TitanMultiTaskAdaptivitySolver(object):
                     allocated = True 
             if not allocated: 
                 allocated_gpu_solution.append(0) 
+        
+        for i in range(transfer_unique_job_num): 
+            allocated = False 
+            for j in range(transfer_left_list[i], transfer_right_list[i]): 
+                res = X[j + len(required_resource_list) + len(mtask_required_resource_list)].x 
+                if res is not None and res > 0.5: 
+                    allocated_gpu_solution.append(transfer_required_resource_list[j])
+                    allocated = True 
+            if not allocated: 
+                allocated_gpu_solution.append(0)
+
+        for i in range(temporal_transfer_unique_job_num): 
+            allocated = False 
+            for j in range(temporal_transfer_left_list[i], temporal_transfer_right_list[i]): 
+                res =  X[j + len(required_resource_list) + len(mtask_required_resource_list) + len(transfer_required_resource_list)].x 
+                if res is not None and res > 0.5: 
+                    allocated_gpu_solution.append(temporal_transfer_required_resource_list[j])
+                    allocated = True 
+            
+            if not allocated: 
+                allocated_gpu_solution.append(0)
+        
+        # tot_resource_list = required_resource_list + mtask_required_resource_list + transfer_required_resource_list
+        # tot_allocation_list = equalivent_allocation_list + mtask_equalivent_allocation_list + transfer_equalivent_allocation_list
+        
+        # for k in range(var_len): 
+        #     ident = 'mtask' if k >= len(required_resource_list) else 'single'
+        #     if ident == 'mtask': 
+        #         ident = 'transfer_task' if k >= len(required_resource_list) + len(mtask_required_resource_list) else 'mtask'
+        #     if isinstance(tot_allocation_list[k], list) and 10 in tot_allocation_list[k]: 
+        #         self.logger.info('k, {}, x {}, resource {}, ident {}, weight {}, eq {}'.format(k, X[k].x, tot_resource_list[k], ident, tot_weight_list[k], tot_allocation_list[k]))
+        #     elif isinstance(tot_allocation_list[k], int) and tot_allocation_list[k] == 10: 
+        #         self.logger.info('k, {}, x {}, resource {}, ident {}, weight {}, eq {}'.format(k, X[k].x, tot_resource_list[k], ident, tot_weight_list[k], tot_allocation_list[k]))
+
+        # print([X[k].x for k in range(var_len)])
+        # print(required_resource_list + mtask_required_resource_list)
+
         # if multi_task: 
         #     self.logger.info("allocated_gpu_solution is {}".format(allocated_gpu_solution))
         #     import pdb; pdb.set_trace() 
