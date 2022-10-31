@@ -17,6 +17,7 @@ from .base import BaseJob
 from .state import JobState
 from .elastic_utils import SpeedupFunction, GoodputFunction, fit_perf_params
 from client.application import ResourceElasticApplication, BatchElasticApplication
+from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS
 import collections 
 import math 
 import numpy as np 
@@ -122,11 +123,11 @@ class ResourceElasticJob(BaseJob):
 
 class BatchElasticJob(BaseJob): 
     __alias__ = 'batch_elastic' 
-    def __init__(self, df): 
+    def __init__(self, df, **kwargs): 
         super(BatchElasticJob, self).__init__(name=df.name, application=df.application, submission_time=df.submission_time)
         self.preemptible = True 
         if not hasattr(self, 'application') or self.application is None or isinstance(self.application, ResourceElasticApplication): 
-            self.application = BatchElasticApplication(name='imagenet', duration=df.duration, num_gpus=df.num_gpus)
+            self.application = FOUNDATIONMODELAPPLICATIONS[df.application]
 
         self.target_batch_size = None # self.application.init_batch_size
         self.completion_time = None
@@ -143,6 +144,30 @@ class BatchElasticJob(BaseJob):
         self.epoch = 0
         self.attained_service = 0
         self.num_restarts = None
+        
+        self.add_ckpt = kwargs.get('add_ckpt', 0)
+        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(1, pipeline=False)
+
+        # statistical information
+        if hasattr(df, 'target_metric'): 
+            self.target_gradient_steps = df.target_gradient_steps
+            self.target_lr = df.target_lr
+            self.target_metric = float(df.target_metric)
+            self.max_progress = self.application.progress_per_epoch * \
+                self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
+            # self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
+            # print('name {}, epoch {}'.format(self.name, self.max_progress // self.application.progress_per_epoch))
+            self.training_epochs = self.application.get_completion_epoch(lr=self.target_lr, gradient_steps=self.target_gradient_steps, target_metric=self.target_metric)
+        else: 
+            self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
+            self.training_epochs = self.application.max_epochs
+        self.target_batch_size = int(df.target_batch_size)
+        self.max_num_gpus = 32
+        self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
+        
+        self.atomic_bsz = 0 
+        self.accum_steps = 0
+
 
     @property
     def max_profiled_replicas(self):
@@ -150,13 +175,13 @@ class BatchElasticJob(BaseJob):
 
     def get_goodput_fn(self):
         app = self.application
-        return GoodputFunction(self.perf_params, self.grad_params, app.init_batch_size)
+        return GoodputFunction(self.perf_params, self.grad_params, self.target_batch_size)
 
     def get_speedup_fn(self):
         if self.perf_params is None:
             return lambda n, r: r
         app = self.application
-        return SpeedupFunction(self.get_goodput_fn(), app.max_batch_size,
+        return SpeedupFunction(self.get_goodput_fn(), self.target_batch_size,
                                (app.min_local_bsz, app.max_local_bsz),
                                accumulation=True)
 
@@ -170,16 +195,16 @@ class BatchElasticJob(BaseJob):
         if batch_size is None:
             goodput_fn = self.get_goodput_fn()
             _, self.atomic_bsz, self.accum_steps = goodput_fn.optimize(
-                num_nodes, num_replicas, app.max_batch_size,
+                num_nodes, num_replicas, self.target_batch_size,
                 (app.min_local_bsz, app.max_local_bsz), accumulation=True)
         else:
             local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
             self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
-            if num_replicas == 1 and batch_size > app.init_batch_size:
+            if num_replicas == 1 and batch_size > app.max_local_bsz:
                 self.accum_steps = max(1, self.accum_steps)
             self.atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
         count = num_replicas * (self.accum_steps + 1)
-        self.atomic_bsz = min(self.atomic_bsz, int(app.max_batch_size / count))
+        self.atomic_bsz = max(min(self.atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
 
     def reupdate(self, ): 
         num_nodes = np.array([key[0] for key in self.profile])
@@ -209,61 +234,65 @@ class BatchElasticJob(BaseJob):
     def step(self, seconds, interference=0.0):
         if not self.placement:
             # No resources are allocated to this job.
-            self.current_time += seconds
+            if self.completion_time is None: 
+                self.staying_time += seconds
+                self.status = JobState.PENDING
+                self.pending_time += seconds 
             return
         delay = min(self.rescale_time, seconds)
         self.current_time += delay
         self.attained_service += delay * sum(self.placement)
         self.rescale_time -= delay
         seconds -= delay
-        while seconds > 0 and self.completion_time is None:
+        self.staying_time += delay
+        self.status = JobState.RUNNING
+
+        if abs(self.progress - self.max_progress) > 0.1 and seconds > 0: 
             assert self.epoch < self.application.max_epochs
             # Calculate current job configurations.
             placement = tuple(filter(None, self.placement))
+            self.update_local_bsz(self.placement)
             num_nodes, num_replicas = len(placement), sum(placement)
             local_bsz = self.atomic_bsz
             batch_size = num_replicas * self.atomic_bsz * (self.accum_steps + 1)
-            scale = batch_size / self.application.init_batch_size
+            if self.target_batch_size is not None: 
+                scale = 1.0
+            else:
+                scale = batch_size / self.application.init_batch_size
             # Calculate true (simulated) throughput.
             step_time, sync_time = \
                 self.application.get_throughput(placement, self.atomic_bsz)
             accum_time = step_time - sync_time
             # Calculate true (simulated) efficiency.
-            grad_sqr, grad_var = \
-                self.application.get_grad_stats(batch_size, self.epoch)
-            gain = (grad_var + grad_sqr) / (grad_var / scale + grad_sqr)
+            if self.target_batch_size is not None: 
+                gain = 1.0
+                grad_sqr = 1.0 
+                grad_var = 1.0
+            else: 
+                grad_sqr, grad_var = \
+                    self.application.get_grad_stats(batch_size, self.epoch)
+                gain = (grad_var + grad_sqr) / (grad_var / scale + grad_sqr)
+
             # Update the estimated throughput/efficiency parameters.
             self.update_params(num_nodes, num_replicas, self.atomic_bsz,
                                step_time, sync_time, grad_sqr, grad_var)
             # Calculate true (simulated) goodput.
             total_time = step_time + accum_time * self.accum_steps
-            goodput = gain / total_time * (1.0 - interference)
+
             # Update current epoch and progress.
-            next_progress = self.application.get_progress(self.epoch + 1)
-            if self.progress + goodput * seconds < next_progress:
-                # Used up the entire time interval without finishing an epoch.
-                self.progress += goodput * seconds
-                self.current_time += seconds
-                self.attained_service += seconds * sum(self.placement)
-                seconds = 0
-            else:
-                # Crossed an epoch boundary before finishing the time interval.
-                self.epoch += 1
-                delta = round(float((next_progress - self.progress) / goodput))
-                assert delta <= seconds
-                completion_epoch = \
-                    self.application.get_completion_epoch(batch_size)
-                if self.epoch > completion_epoch:
-                    self.completion_time = self.current_time + delta
-                self.progress = next_progress
-                self.best_metric = \
-                    self.application.get_best_metric(batch_size, self.epoch)
-                self.current_time += delta
-                self.attained_service += delta * sum(self.placement)
-                seconds -= delta
-                # Re-scale batch size between epochs.
-            self.update_local_bsz(self.placement)
-        self.current_time += seconds  # Add any remaining time.
+            total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
+            self.progress += delta_progress
+            
+            if abs(self.progress - self.max_progress) <= 0.1: 
+                self.completion_time = self.staying_time + delta_seconds + self.submission_time 
+            self.attained_service += delta_seconds * sum(placement) 
+            
+            
+        self.staying_time += delta_seconds 
+        self.running_time += delta_seconds
+        self.current_time += delta_seconds
 
     def reallocate(self, placement, **kwargs):
         if placement:
@@ -280,6 +309,7 @@ class BatchElasticJob(BaseJob):
             else:
                 assert 'base job should not be preepmted'
                 self.num_restarts += 1
+            self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
 
         else:  # De-allocate all resources.
             self.placement = None 

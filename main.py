@@ -41,7 +41,7 @@ def parse_job_file(filename, job_type, job_manager, opt):
         elif job_type == 'foundation_model': 
             job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt) 
         else: 
-            job_instance = JobFactory(name=job_type)(row) 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt) 
         
         if hasattr(row, 'ddl_time_list'): 
             if isinstance(row.ddl_time_list, str): 

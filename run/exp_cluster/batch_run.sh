@@ -13,17 +13,17 @@ do
     # for trace in FM-720-vit-large
     # for trace in FM-480-vit
     # for trace in debug
-    for trace in FM-720-roberta-large # FM-480-roberta-base
+    for trace in FM-160-roberta-base # FM-480-roberta-base
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
             num_node_p_switch=8
             num_gpu_p_node=4
-            scheduling_time_interval=60
+            scheduling_time_interval=300
             add_ckpt=30
-            for multi_task_adaptivity in True # False  # True False 
+            for multi_task_adaptivity in False # False  # True False 
             do 
-                for schedule in titan # themis  tiresias optimus srtf  # tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in pollux titan # titan # themis  tiresias optimus srtf  # tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                 do 
                     extra_cmd=""
                     ident="${schedule}_${trace}"
@@ -53,11 +53,17 @@ do
                     fi 
 
                     job_type="foundation_model"
+                    if [[ $schedule == "pollux" ]] ; 
+                    then 
+                        job_type="batch_elastic"
+                    fi 
+
+                    
                     $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                                 --save_log_dir=${save_log_dir} --ident=$ident \
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                                 --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                                --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} #  &
+                                --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd}  &
                 done
             done 
         fi

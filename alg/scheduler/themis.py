@@ -84,8 +84,7 @@ class ThemisScheduler(BaseScheduler):
     def get_finish_time_fairness(self, job):
         if job.deserved_service == 0: 
             return 1 
-
-        t_remaining = job.max_progress - job.progress  
+        t_remaining = job.predict_remaining_time(job.target_num_gpus)
         t_isolated = job.progress   * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
         return job.staying_time / (t_isolated + t_remaining)
 
@@ -165,7 +164,8 @@ class ThemisScheduler(BaseScheduler):
                 if job.status == JobState.PENDING:
                     should_run_jobs.append(job)
                 elif job.status == JobState.RUNNING: 
-                    job.last_running_time = cur_time 
+                    # job.last_running_time = cur_time 
+                    pass
                 else: 
                     raise NotImplementedError
             elif job.status == JobState.RUNNING:

@@ -186,8 +186,8 @@ class TitanScheduler(BaseScheduler):
         equalivent_allocation_list = list() 
 
         total_gpu_num = self.cluster_manager.check_total_gpus() 
-        # candidate_gpus = [i for i in range(0, total_gpu_num + 1)]
-        candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+        candidate_gpus = [i for i in range(0, total_gpu_num + 1)]
+        # candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
         runnable_jobs = sorted(runnable_jobs, key=lambda job: job.predict_remaining_time(1))
         if len(runnable_jobs) > total_gpu_num: 
             for job in runnable_jobs[total_gpu_num:]: 
@@ -270,10 +270,14 @@ class TitanScheduler(BaseScheduler):
 
 
         power = -1
-        tot_weight_weight_per_allocation_list = mtask_weight_per_allication_list + transfer_weight_per_allication_list + temporal_transfer_weight_per_allication_list
+        if self.multi_task_adaptivity: 
+            tot_weight_weight_per_allocation_list = mtask_weight_per_allication_list + transfer_weight_per_allication_list + temporal_transfer_weight_per_allication_list
+        else: 
+            tot_weight_weight_per_allocation_list = list() 
+
         normalized_weight_per_allocation_list = self.normalized_weight(weight_per_allocation_list + (tot_weight_weight_per_allocation_list if self.multi_task_adaptivity else []), power)
         if self.multi_task_adaptivity: 
-            print(len(normalized_weight_per_allocation_list), len(weight_per_allocation_list), len(mtask_weight_per_allication_list))
+            # print(len(normalized_weight_per_allocation_list), len(weight_per_allocation_list), len(mtask_weight_per_allication_list))
             weight_per_allocation_list = normalized_weight_per_allocation_list[:len(weight_per_allocation_list)]
             assert len(mtask_weight_per_allication_list) == len(normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)])
             mtask_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)]

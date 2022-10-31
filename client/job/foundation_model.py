@@ -44,8 +44,8 @@ class FoundationModelJob(BaseJob):
         
         self.atomic_bsz = 0 
         self.accum_steps = 0
+
         
-    
     def get_actual_loss_value(self, predict_progress):
         normalized_progress = min(1, 1.0 * predict_progress / self.max_progress)
         return 1000. / (1 + 0.25 * normalized_progress)
@@ -103,10 +103,12 @@ class FoundationModelJob(BaseJob):
         batch_size = self.target_batch_size 
         local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
         self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
+        if num_replicas == 1 and batch_size > app.max_local_bsz:
+            self.accum_steps = max(1, self.accum_steps)
+                
         self.atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
-        self.atomic_bsz = max(self.application.min_local_bsz, self.atomic_bsz)
         count = num_replicas * (self.accum_steps + 1)
-        self.atomic_bsz = min(self.atomic_bsz, int(app.max_batch_size / count))
+        self.atomic_bsz = max(min(self.atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
 
     def step(self, seconds, **kwargs):
         if not self.placement:
@@ -115,12 +117,12 @@ class FoundationModelJob(BaseJob):
                 self.staying_time += seconds
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
-            self.staying_time += seconds 
             return
         
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
+        self.staying_time += delay
 
         self.status = JobState.RUNNING
         if abs(self.progress - self.max_progress) > 0.1: 
@@ -156,9 +158,9 @@ class FoundationModelJob(BaseJob):
                 self.num_restarts += 1
             kwargs['pipeline'] = False
             if kwargs.get('pipeline', False): 
-                self.rescale_time = self.application.get_context_switch_overhead(self.placement, pipeline=True)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=True)
             else: 
-                self.rescale_time = self.application.get_context_switch_overhead(self.placement, pipeline=False)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
 
         else:  # De-allocate all resources.
             self.placement = None 
@@ -257,14 +259,14 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
                 self.staying_time += seconds
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
-            self.staying_time += seconds 
             return
         
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
-
+        self.staying_time += delay
         self.status = JobState.RUNNING
+
         if self.progress < self.middle_max_progress and self.middle_completion_time is None: 
             placement = tuple(filter(None, self.placement))
             self.update_local_bsz(placement) 
@@ -319,7 +321,7 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
         fm_job.placement = self.placement 
         fm_job.status = self.status 
 
-        fm_job.completion_time = completion_time
+        fm_job.completion_time = completion_time - self.submission_time + fm_job.submission_time
         fm_job.staying_time = fm_job.pending_time + self.staying_time 
         fm_job.running_time = self.running_time 
         fm_job.pending_time = fm_job.pending_time + self.pending_time
@@ -395,7 +397,7 @@ class MtaskFoundationModelJob(FoundationModelJob):
             fm_job.placement = self.placement 
             fm_job.status = self.status 
 
-            fm_job.completion_time = self.completion_time
+            fm_job.completion_time = self.completion_time - self.submission_time + fm_job.submission_time # be careful
             fm_job.staying_time = fm_job.pending_time + self.staying_time 
             fm_job.running_time = self.running_time 
             fm_job.pending_time = fm_job.pending_time + self.pending_time

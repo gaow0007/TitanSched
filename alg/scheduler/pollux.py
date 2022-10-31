@@ -110,8 +110,8 @@ class PolluxScheduler(BaseScheduler):
             else:
                 used_gpus += sum(job.placement)
                 batch_size = job.atomic_bsz * (job.accum_steps + 1) * sum(job.placement)
-                self.logger.info("    {}:\t[epoch {}]\t[restarts {}]\t[batch size {}]\t[placement {}]\t[progress {}]".format(
-                      job.name, job.epoch, job.num_restarts, batch_size, job.placement, job.progress))
+                self.logger.info("    {}:\t[epoch {}]\t[restarts {}]\t[batch size {}]\t[target {}]\t[placement {}]\t[progress {:.02f}%]".format(
+                      job.name, job.epoch, job.num_restarts, batch_size, job.target_batch_size, job.placement, 100 * job.progress / job.max_progress))
         self.logger.info("GPU utilization: {}".format(used_gpus))
         for job in need_remove_jobs:
             self.running_jobs.remove(job)
@@ -139,12 +139,12 @@ class PolluxScheduler(BaseScheduler):
                 max_replicas=min(max(2 * job.max_profiled_replicas, 1), 64,  # simulator can't handle more.
                                 job.application.max_batch_size // job.application.min_local_bsz),
                 preemptible=True,
-                max_progress=job.application.max_progress - job.progress,
+                max_progress=job.max_progress - job.progress,
                 name=job.name
             )
             # print(job_infos[job.name].max_profiled_replicas)
             job_infos[job.name].num_restarts = job.num_restarts or 0
-            job_infos[job.name].age = job.current_time - job.submission_time
+            job_infos[job.name].age = self.cur_time - job.submission_time
         return job_infos
 
 
@@ -245,14 +245,14 @@ class PolluxScheduler(BaseScheduler):
         problem = Problem(list(jobs.values()), list(nodes.values()), base_state)
                           #len(nodes) * [node_template], base_state)
         algorithm = NSGA2(
-            pop_size=100,
+            pop_size=10,
             # pymoo expects a flattened 2-D array.
             sampling=states.reshape(states.shape[0], -1),
             crossover=Crossover(),
             mutation=Mutation(),
             repair=Repair(),
         )
-        result = pymoo.optimize.minimize(problem, algorithm, ("n_gen", 100))
+        result = pymoo.optimize.minimize(problem, algorithm, ("n_gen", 10))
         #states = result.X.reshape(result.X.shape[0], len(jobs), 2 * len(nodes))
         states = result.X.reshape(result.X.shape[0], len(jobs), len(nodes))
         self._prev_states = copy.deepcopy(states)
@@ -376,6 +376,7 @@ class PolluxScheduler(BaseScheduler):
 
     def run(self, ):
         cur_time = 0
+        self.cur_time = cur_time
         while not self.finish_all_jobs():
             prev_time = max(0, cur_time - self.scheduling_time_interval)
             self.flush_jobs(prev_time, cur_time, status=JobState.RUNNING)
@@ -384,5 +385,6 @@ class PolluxScheduler(BaseScheduler):
             self.flush_jobs(prev_time, cur_time, status=JobState.RUNNABLE)
             cur_time += self.scheduling_time_interval
             resource_summary(self)
+            self.cur_time = cur_time 
 
         schedule_summary(self)

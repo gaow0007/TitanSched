@@ -10,7 +10,7 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/`
-    # for trace in FM-720-vit-large
+    # for trace in FM-160-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-480-vit
@@ -19,13 +19,14 @@ do
             echo $trace 
             num_node_p_switch=8
             num_gpu_p_node=4
-            scheduling_time_interval=60
+            
             add_ckpt=30
-            for multi_task_adaptivity in True False 
+            for multi_task_adaptivity in False True
             do 
-                for schedule in titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in srtf # tiresias optimus srtf # pollux titan themis tiresias optimus srtf  # pollux # titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                 do 
                     extra_cmd=""
+                    scheduling_time_interval=300
                     ident="${schedule}_${trace}"
                     save_log_dir=result/$schedule/$trace
                     if [[ $schedule != "titan" &&  $multi_task_adaptivity == "True" ]]; 
@@ -52,6 +53,12 @@ do
                     fi 
 
                     job_type="foundation_model"
+                    if [[ $schedule == "pollux" ]] ; 
+                    then 
+                        job_type="batch_elastic"
+                        scheduling_time_interval=300
+                    fi 
+
                     $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                                 --save_log_dir=${save_log_dir} --ident=$ident \
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \

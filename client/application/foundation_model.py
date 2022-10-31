@@ -57,6 +57,7 @@ class FoundationModelSpeed(object):
     
     @memoize
     def get_throughput(self, placement, local_bsz):
+        print(placement, local_bsz)
         placement = tuple(filter(None, placement))
         placement = min(placement[i:] + placement[:i]
                         for i in range(len(placement)))
