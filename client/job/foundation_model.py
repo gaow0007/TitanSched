@@ -8,7 +8,7 @@ from .base import BaseJob
 from .state import JobState
 import copy
 
-
+DEFAULT_GPU_KIND="V100"
 
 class FoundationModelJob(BaseJob): 
     __alias__ = 'foundation_model' 
@@ -24,7 +24,7 @@ class FoundationModelJob(BaseJob):
         self.placement = None 
         self.preemptible = True 
         self.add_ckpt = kwargs.get('add_ckpt', 0)
-        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(1, pipeline=False)
+        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
         # statistical information
         if hasattr(df, 'target_metric'): 
@@ -44,6 +44,8 @@ class FoundationModelJob(BaseJob):
         
         self.atomic_bsz = 0 
         self.accum_steps = 0
+        self.physical = kwargs.get('physical', 'False')
+        self.failure_ratio = kwargs.get('failure_ratio', 0.05)
 
         
     def get_actual_loss_value(self, predict_progress):
@@ -87,7 +89,10 @@ class FoundationModelJob(BaseJob):
             raise NotImplementedError
         
         self.update_local_bsz(placement)
-        step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+        if hasattr(self, 'topolocy') and self.topology is not None: 
+            import pdb; pdb.set_trace() 
+        else: 
+            step_time, sync_time = self.application.get_throughput(DEFAULT_GPU_KIND, placement, self.atomic_bsz)
         accum_time = step_time - sync_time
         total_time = step_time + accum_time * (self.accum_steps + 1)
         total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
@@ -110,6 +115,13 @@ class FoundationModelJob(BaseJob):
         count = num_replicas * (self.accum_steps + 1)
         self.atomic_bsz = max(min(self.atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
 
+    def current_device(self, ): 
+        if not hasattr(self, 'topology') or self.topology is None or len(self.topology) == 0:  
+            return DEFAULT_GPU_KIND
+        else: 
+            return self.topology[0]['nodes'][0]['node_instance'].GPU_KIND
+
+
     def step(self, seconds, **kwargs):
         if not self.placement:
             # No resources are allocated to this job.
@@ -118,7 +130,13 @@ class FoundationModelJob(BaseJob):
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
             return
-        
+            
+        if self.physical and np.random.rand() > 1 - self.failure_ratio: 
+            self.staying_time += seconds 
+            self.running_time += seconds
+            self.status = JobState.RUNNING
+            return 
+
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
@@ -129,7 +147,7 @@ class FoundationModelJob(BaseJob):
             placement = tuple(filter(None, self.placement))
             self.update_local_bsz(placement) 
             
-            step_time, sync_time = self.application.get_throughput(placement, self.atomic_bsz)
+            step_time, sync_time = self.application.get_throughput(GPU_KIND=self.current_device(), placement=placement, local_bsz=self.atomic_bsz)
             accum_time = step_time - sync_time
             total_time = step_time + accum_time * self.accum_steps
             total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
@@ -151,16 +169,20 @@ class FoundationModelJob(BaseJob):
             self.placement = tuple(placement)
             if kwargs.get('topology') is not None: 
                 self.topology = kwargs.get('topology')
+            else: 
+                self.topology = None 
 
             if self.num_restarts is None:
                 self.num_restarts = 0
             else:
                 self.num_restarts += 1
             kwargs['pipeline'] = False
+            GPU_KIND = self.current_device()
+            
             if kwargs.get('pipeline', False): 
-                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=True)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=GPU_KIND, placement=self.placement, pipeline=True)
             else: 
-                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
+                self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=GPU_KIND, placement=self.placement, pipeline=False)
 
         else:  # De-allocate all resources.
             self.placement = None 
@@ -260,7 +282,13 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
             return
-        
+
+        if self.physical and np.random.rand() > 1 - self.failure_ratio: 
+            self.staying_time += seconds 
+            self.running_time += seconds
+            self.status = JobState.RUNNING
+            return 
+            
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 

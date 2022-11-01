@@ -26,6 +26,7 @@ class TitanScheduler(BaseScheduler):
         else: # 0.391540
             self.titan_solver = TitanSolver(method='naive')
         self.temporal_transferability = (self.multi_task_adaptivity and kwargs.get('temporal_transferability', False))
+        self.transferability = (self.multi_task_adaptivity and kwargs.get('transferability', False))
         self.solver_time_list = list() 
     
 
@@ -263,7 +264,8 @@ class TitanScheduler(BaseScheduler):
                 temporal_transfer_required_resource_list, temporal_transfer_weight_per_allication_list, \
                     temporal_transfer_equalivent_allocation_list, temporal_transfer_jobs = temporal_transfer_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
                         weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
-            else: 
+            
+            if self.transferability: 
                 transfer_required_resource_list, transfer_weight_per_allication_list, transfer_equalivent_allocation_list, transfer_jobs = \
                     transfer_builder(self=self, runnable_jobs=runnable_jobs, prev_time=prev_time, cur_time=cur_time, required_resource_list=required_resource_list, \
                         weight_per_allocation_list=weight_per_allocation_list, equalivent_allocation_list=equalivent_allocation_list)
@@ -281,10 +283,16 @@ class TitanScheduler(BaseScheduler):
             weight_per_allocation_list = normalized_weight_per_allocation_list[:len(weight_per_allocation_list)]
             assert len(mtask_weight_per_allication_list) == len(normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)])
             mtask_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list):len(weight_per_allocation_list)+len(mtask_weight_per_allication_list)]
+            if self.transferability: 
+                prev_length = len(weight_per_allocation_list) + len(mtask_weight_per_allication_list)
+                next_length = prev_length + len(transfer_weight_per_allication_list)
+                transfer_weight_per_allication_list = normalized_weight_per_allocation_list[prev_length:next_length]
             if self.temporal_transferability:
-                temporal_transfer_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list)+len(mtask_weight_per_allication_list):]
-            else:  
-                transfer_weight_per_allication_list = normalized_weight_per_allocation_list[len(weight_per_allocation_list)+len(mtask_weight_per_allication_list):]
+                prev_length= len(weight_per_allocation_list)+len(mtask_weight_per_allication_list) + len(transfer_weight_per_allication_list)
+                next_length = prev_length + len(temporal_transfer_weight_per_allication_list)
+                temporal_transfer_weight_per_allication_list = normalized_weight_per_allocation_list[prev_length:next_length]
+            
+                
             
         else: 
             weight_per_allocation_list = normalized_weight_per_allocation_list
@@ -359,16 +367,18 @@ class TitanScheduler(BaseScheduler):
                     should_run_jobs.append(mtask_job)
                     mtask_job.target_num_gpus = solution[unique_job_num + idx]
 
+            if self.transferability:  
+                for idx, transfer_job in enumerate(transfer_jobs): 
+                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
+                        should_run_jobs.append(transfer_job)
+                        transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
+                        
             if self.temporal_transferability: 
                 for idx, temporal_transfer_job in enumerate(temporal_transfer_jobs): 
                     if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
                         should_run_jobs.append(temporal_transfer_job)
                         temporal_transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
-            else: 
-                for idx, transfer_job in enumerate(transfer_jobs): 
-                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
-                        should_run_jobs.append(transfer_job)
-                        transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
+
 
             
                 

@@ -21,27 +21,23 @@ do
             num_gpu_p_node=4
             
             add_ckpt=30
-            for multi_task_adaptivity in False True
+            
+            for failure_ratio in 0 5 10 # 20
             do 
-                for schedule in  titan # pollux titan themis tiresias optimus srtf # pollux titan themis tiresias optimus srtf  # pollux # titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in  titan  tiresias optimus pollux # titan pollux tiresias optimus
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300
-                    ident="${schedule}_${trace}"
-                    save_log_dir=result/$schedule/$trace
-                    if [[ $schedule != "titan" &&  $multi_task_adaptivity == "True" ]]; 
-                    then 
-                        continue 
-                    fi 
+                    ident="0_failure_${schedule}_${trace}_${failure_ratio}"
+                    save_log_dir=result/physical/$schedule/$trace/${failure_ratio}
+                    mkdir -p $save_log_dir
+                    multi_task_adaptivity=True
 
-                    
                     if [[ $schedule == "titan" ]] ;
                     then 
                         temporal_transferability=True
                         transferability=True
-                        extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability" # 0.302186
-                        ident="${schedule}_${trace}_${multi_task_adaptivity}_${transferability}"
-                        save_log_dir=result/$schedule/$trace-${multi_task_adaptivity}-${transferability}
+                        extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
                         scheduling_time_interval=300
                     fi 
 
@@ -62,9 +58,11 @@ do
                                 --save_log_dir=${save_log_dir} --ident=$ident \
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                                 --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
+                                --physical=True --failure_ratio=$failure_ratio \
                                 --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} &
                 done
             done 
+
         fi
         
     done

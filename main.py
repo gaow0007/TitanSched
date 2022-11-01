@@ -20,7 +20,11 @@ from client.user import (UserManager, VanillaUser, TimeAwareUser)
 
 from utils.logger import getLogger
 
-
+import random
+import numpy as np
+seed=42
+random.seed(seed)
+np.random.seed(seed)
 
 # USERS = users.USERS
 # JOBS = jobs.JOBS
@@ -39,9 +43,9 @@ def parse_job_file(filename, job_type, job_manager, opt):
             job_instance = JobFactory(name=job_type)(name=row.name, submission_time=row.submission_time,\
                                                 target_duration=row.duration, target_num_replicas=row.num_gpus, target_gpus_per_replica=1)
         elif job_type == 'foundation_model': 
-            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt) 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
         else: 
-            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt) 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
         
         if hasattr(row, 'ddl_time_list'): 
             if isinstance(row.ddl_time_list, str): 
@@ -90,6 +94,15 @@ def prepare_cluster(opt):
                         num_gpu_p_node=opt.num_gpu_p_node, 
                         num_cpu_p_node=opt.num_cpu_p_node, 
                         mem_p_node=opt.mem_p_node)
+    if opt.heter: 
+        num_node_p_gpu_kind = opt.num_node_p_switch // len(opt.heter_gpus)
+        for heter_id, heter_gpu in enumerate(opt.heter_gpus): 
+            for node_id, node in enumerate(cluster_instance.switch_list[0].node_list[heter_id * num_node_p_gpu_kind: (heter_id+1) * num_node_p_gpu_kind]):
+                node.GPU_KIND = heter_gpu
+                print(node_id, heter_gpu)
+    else: 
+        for node in cluster_instance.switch_list[0].node_list: 
+            node.GPU_KIND = 'V100' 
     return cluster_instance 
 
 

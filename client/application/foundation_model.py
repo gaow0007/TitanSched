@@ -6,6 +6,7 @@ import pandas
 import numpy as np 
 from scipy.interpolate import interp1d, LinearNDInterpolator
 
+DEFAULT_GPU_KIND="V100"
 
 def get_standarized_metric(task_name): 
     return task_name
@@ -21,42 +22,47 @@ def memoize(f):
 class FoundationModelSpeed(object): 
     def __init__(self, trace_dir, name):
         self.name = name 
-        self.placements = None 
-        self.scalability = None 
-        self.memory_consumption = None 
-        self.context_switch_overhead = None 
+        self.placements = {} 
+        self.scalability = {} 
+        self.memory_consumption = {} 
+        self.context_switch_overhead = {} 
         # load files
-        placement_file = os.path.join(trace_dir, "{}_placements.csv".format(self.name))
-        if os.path.exists(placement_file): 
-            self.placements = pandas.read_csv(placement_file)
-            self.placements["num_nodes"] = \
-                self.placements.placement.apply(lambda p: len(str(p)))
-            self.placements["num_replicas"] = \
-                self.placements.placement.apply(lambda p: sum(map(int, str(p))))
+        for GPU_KIND in ['V100', 'A100']: 
+            placement_file = os.path.join(trace_dir, GPU_KIND, "{}_placements.csv".format(self.name))
+            if os.path.exists(placement_file): 
+                placements = pandas.read_csv(placement_file)
+                placements["num_nodes"] = \
+                    placements.placement.apply(lambda p: len(str(p)))
+                placements["num_replicas"] = \
+                    placements.placement.apply(lambda p: sum(map(int, str(p))))
+                self.placements[GPU_KIND] = placements
 
-        scalability_file = os.path.join(trace_dir, "{}_scalability.csv".format(self.name))
-        if os.path.exists(scalability_file): 
-            self.scalability = pandas.read_csv(scalability_file)
+            scalability_file = os.path.join(trace_dir, GPU_KIND, "{}_scalability.csv".format(self.name))
+            if os.path.exists(scalability_file): 
+                scalability = pandas.read_csv(scalability_file)
+                self.scalability[GPU_KIND] = scalability
 
-        memory_consumption_file = os.path.join(trace_dir, "{}_memory.csv".format(self.name))
-        if os.path.exists(memory_consumption_file): 
-            self.memory_consumption = pandas.read_csv(memory_consumption_file)
+            memory_consumption_file = os.path.join(trace_dir, "{}_memory.csv".format(self.name))
+            if os.path.exists(memory_consumption_file): 
+                memory_consumption = pandas.read_csv(memory_consumption_file)
+                self.memory_consumption[GPU_KIND] = memory_consumption
 
-        context_switch_overhead_file = os.path.join(trace_dir, "{}_context_switch.csv".format(self.name))
-        if os.path.exists(context_switch_overhead_file):
-            self.context_switch_overhead = pandas.read_csv(context_switch_overhead_file)
+            context_switch_overhead_file = os.path.join(trace_dir, GPU_KIND, "{}_context_switch.csv".format(self.name))
+            if os.path.exists(context_switch_overhead_file):
+                context_switch_overhead = pandas.read_csv(context_switch_overhead_file)
+                self.context_switch_overhead[GPU_KIND] = context_switch_overhead
 
-    def get_context_switch_overhead(self, placement, pipeline):
+    def get_context_switch_overhead(self, GPU_KIND, placement, pipeline):
         # import pdb; pdb.set_trace() 
         # self.context_switch_overhead[placement, pipeline]
-        return float(self.context_switch_overhead.time_cost.max())
+        return float(self.context_switch_overhead[GPU_KIND].time_cost.max())
     
     @memoize
-    def get_memory_consumption(self, local_bsz): 
-        self.memory_consumption[local_bsz]
+    def get_memory_consumption(self, GPU_KIND, local_bsz): 
+        self.memory_consumption[GPU_KIND][local_bsz]
     
     @memoize
-    def get_throughput(self, placement, local_bsz):
+    def get_throughput(self, GPU_KIND, placement, local_bsz):
         print(placement, local_bsz)
         placement = tuple(filter(None, placement))
         placement = min(placement[i:] + placement[:i]
@@ -64,16 +70,15 @@ class FoundationModelSpeed(object):
         placement_id = int("".join(map(str, placement)))
         xs = ["num_nodes", "num_replicas", "local_bsz"]
         ys = ["step_time", "sync_time"]
-        if placement_id in self.placements.placement.values:
+        if placement_id in self.placements[GPU_KIND].placement.values:
             # Found in placement traces, interpolate between local_bsz.
-            df = self.placements[self.placements.placement == placement_id]
+            df = self.placements[GPU_KIND][self.placements[GPU_KIND].placement == placement_id]
             interpolator = interp1d(df.local_bsz.values, df[ys].values, axis=0)
             ret = interpolator(local_bsz)
         else:
-            
             # Interpolate between num_nodes, num_replicas, and local_bsz.
-            df = self.placements.groupby(xs)[xs + ys].mean()
-            df = df.append(self.scalability, ignore_index=True)
+            df = self.placements[GPU_KIND].groupby(xs)[xs + ys].mean()
+            df = df.append(self.scalability[GPU_KIND], ignore_index=True)
             num_nodes, num_replicas = len(placement), sum(placement)
             num_nodes = min(num_nodes, 16)
             
@@ -148,22 +153,22 @@ class FoundationModelApplication(object):
 
         # stats-related 
         
-        self.max_local_bsz = int(self.fm_speed.placements.local_bsz.max())
-        self.min_local_bsz = int(self.fm_speed.placements.local_bsz.min())
+        self.max_local_bsz = int(self.fm_speed.placements[DEFAULT_GPU_KIND].local_bsz.max())
+        self.min_local_bsz = int(self.fm_speed.placements[DEFAULT_GPU_KIND].local_bsz.min())
         self.metric_key = FMStats.hpo_info.standarized_metric(self.task_name)
         self.progress_per_epoch = TaskScale[self.task_name]
         self.max_epochs = 10
         self.max_batch_size = 1024
 
     
-    def get_context_switch_overhead(self, placement, pipeline): 
-        return self.fm_speed.get_context_switch_overhead(placement, pipeline)
+    def get_context_switch_overhead(self, GPU_KIND, placement, pipeline): 
+        return self.fm_speed.get_context_switch_overhead(GPU_KIND, placement, pipeline)
     
     def get_memory_consumption(self, local_bsz): 
         self.fm_speed.memory_consumption[local_bsz]
 
-    def get_throughput(self, placement, local_bsz):
-        return self.fm_speed.get_throughput(placement, local_bsz) 
+    def get_throughput(self, GPU_KIND, placement, local_bsz):
+        return self.fm_speed.get_throughput(GPU_KIND, placement, local_bsz) 
     
     def get_completion_epoch(self,  **kwargs):
         target_metric = kwargs.get('target_metric')
@@ -203,7 +208,7 @@ class FoundationModelApplication(object):
 
 
 
-STATS_DIR = os.path.join(os.path.dirname(__file__), "appinfo", "fminfo")
+STATS_DIR = os.path.join(os.path.dirname(__file__), "appinfo", "fminfo", "V100")
 FOUNDATIONMODELAPPLICATIONS = {
     # ////////////////////////// -- language models 
     "roberta-base@wnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@wnli"), scale="small"), 

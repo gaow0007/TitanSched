@@ -168,6 +168,9 @@ class BatchElasticJob(BaseJob):
         self.atomic_bsz = 0 
         self.accum_steps = 0
 
+        self.physical = kwargs.get('physical', 'False')
+        self.failure_ratio = kwargs.get('failure_ratio', 0.05)
+
 
     @property
     def max_profiled_replicas(self):
@@ -239,6 +242,13 @@ class BatchElasticJob(BaseJob):
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
             return
+
+        if self.physical and np.random.rand() > 1 - self.failure_ratio: 
+            self.staying_time += seconds 
+            self.running_time += seconds
+            self.status = JobState.RUNNING
+            return 
+
         delay = min(self.rescale_time, seconds)
         self.current_time += delay
         self.attained_service += delay * sum(self.placement)
