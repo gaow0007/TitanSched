@@ -8,28 +8,7 @@ from .schedutils import resource_summary, schedule_summary
 from .titan_solver import TitanSolver, TitanMultiTaskAdaptivitySolver
 from .titan_mtask import mtask_builder
 from .titan_transfer import transfer_builder, temporal_transfer_builder
-METHOD="FFT"
-
-
-def compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval): 
-    if METHOD == "TIME":
-        predict_remaing_time = job.predict_remaining_time(placement)
-        # weight = fair_remaining_time / predict_remaing_time
-        weight = 1.0 / (predict_remaing_time + 1e-3) # * gpu_num
-    elif METHOD == "THR": 
-        throughput = job.throughput_estimation(placement, batch_size=job.batch_size)
-        # step_time = job.application.get_throughput(placement=placement, local_bsz=32)
-        if isinstance(step_time, (tuple, np.ndarray)): 
-            step_time = step_time[0]
-        weight = 32. * sum(placement) / step_time / (job.max_progress - job.progress)
-    elif METHOD == "FAIR": 
-        predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
-        weight = 1.0 * fair_remaining_time / predict_remaing_time 
-    elif METHOD == "FFT": 
-        predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
-        weight = 1.0 * (predict_remaing_time + cur_time - job.submission_time) / (fair_remaining_time + cur_time - job.submission_time)
-    return weight
-
+from .titan_utils import compute_weight_metric, allocation2num, build_placement_from_num, create_candidate_allocations, METHOD
 
 
 class TitanScheduler(BaseScheduler):
@@ -50,6 +29,7 @@ class TitanScheduler(BaseScheduler):
         self.temporal_transferability = (self.multi_task_adaptivity and kwargs.get('temporal_transferability', False))
         self.transferability = (self.multi_task_adaptivity and kwargs.get('transferability', False))
         self.solver_time_list = list() 
+        self.heterogeneity = kwargs.get("heterogeneity", False)
     
 
     def debug_cluster(self, cur_time): 
@@ -210,10 +190,17 @@ class TitanScheduler(BaseScheduler):
         required_resource_list = list() 
         weight_per_allocation_list = list() 
         equalivent_allocation_list = list() 
-
         total_gpu_num = self.cluster_manager.check_total_gpus() 
-        candidate_gpus = [i for i in range(0, total_gpu_num + 1)]
-        # candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+        if self.heterogeneity: 
+            cluster_gpu_info = {
+                "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+                "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+            }
+        else: 
+            cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+
+        candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
+        
         runnable_jobs = sorted(runnable_jobs, key=lambda job: job.predict_remaining_time(1))
         if len(runnable_jobs) > total_gpu_num: 
             for job in runnable_jobs[total_gpu_num:]: 
@@ -232,31 +219,28 @@ class TitanScheduler(BaseScheduler):
         for idx, job in enumerate(runnable_jobs):
             job.equalivent_allocation_idx = idx 
             fair_remaining_time = max(job.predict_remaining_time(min(fair_placement * job.job_number, job.max_num_gpus)), self.scheduling_time_interval)
-            for gpu_num in candidate_gpus: 
-                if gpu_num == 0: 
-                    required_resource_list.append(gpu_num)
+            for allocations in candidate_allocations: 
+                if allocation2num(allocations) == 0: 
+                    required_resource_list.append(allocations)
                     weight_per_allocation_list.append(1e-4*job.base_weight_scale)
                     equalivent_allocation_list.append(idx)
                     continue 
                 
-                if gpu_num > job.max_num_gpus: continue 
-                placement = () 
-                while sum(placement) < gpu_num:
-                    placement = (*placement, min(gpu_num - sum(placement), 4))
-                
+                if allocation2num(allocations) > job.max_num_gpus: continue 
                 # METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval
-                weight = compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
+                weight = compute_weight_metric(METHOD, job, allocations, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
                 
                 # print(fair_placement, placement, weight, job.max_num_gpus)
                 # weight = 32. * gpu_num / step_time / (job.max_progress - job.progress) 
                 # print('max_progress', job.max_progress, job.progress, weight)
                 if np.isinf(weight) or np.isnan(weight): 
-                    required_resource_list.append(gpu_num)
+                    required_resource_list.append(allocations)
                     weight_per_allocation_list.append(1e-4*job.base_weight_scale)
                     equalivent_allocation_list.append(idx)
                     continue 
+                
                 weight = weight # * job.reweight
-                required_resource_list.append(gpu_num)
+                required_resource_list.append(allocations)
                 weight_per_allocation_list.append(weight)
                 equalivent_allocation_list.append(idx)
                 
@@ -331,17 +315,18 @@ class TitanScheduler(BaseScheduler):
                                                     temporal_transfer_weight_per_allication_list=temporal_transfer_weight_per_allication_list, \
                                                     temporal_transfer_equalivent_allocation_list=temporal_transfer_equalivent_allocation_list, \
                                                     temporal_transfer_unique_job_num=temporal_transfer_unique_job_num, 
-                                                    cluster_capacity=cluster_capacity, 
+                                                    cluster_capacity=cluster_gpu_info, 
                                                     max_seconds=30, power=power)
         else: 
             solution = self.titan_solver.job_selection(required_resource_list, weight_per_allocation_list, \
-                                            equalivent_allocation_list, unique_job_num, cluster_capacity, \
+                                            equalivent_allocation_list, unique_job_num, cluster_gpu_info, \
                                             max_seconds=30, power=power)
 
         self.logger.info('solution == {}'.format(solution))
 
         should_run_jobs = list() 
         for idx, job in enumerate(runnable_jobs): 
+            solution[idx] = allocation2num(solution[idx])
             if job.status == JobState.RUNNING: 
                 if job.target_num_gpus != solution[idx]: 
                     # if not hasattr(job, 'topology'): 
@@ -366,8 +351,8 @@ class TitanScheduler(BaseScheduler):
                         self.pending_jobs.append(job)
                     
             elif job.status == JobState.PENDING: 
-                if solution[idx] > 0: 
-                    job.target_num_gpus = solution[idx] 
+                if solution[idx] is not None: 
+                    job.target_num_gpus = solution[idx] # 
                     should_run_jobs.append(job)
 
             else: 

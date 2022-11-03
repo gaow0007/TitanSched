@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 import numpy as np 
 from client.job.foundation_model import FoundationModelJob, TransferFoundationModelJob, TemporalTransferFoundationModelJob
 from client.job.state import JobState
+from .titan_utils import compute_weight_metric, allocation2num, build_placement_from_num, create_candidate_allocations, METHOD
 
 TRANSFER_MAX_ALLOCATION_IDX=4096
 TEMPORAL_TRANSFER_MAX_ALLOCATION_IDX=8192
@@ -32,7 +33,16 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
     
     if len(runnable_jobs) > 0: 
         fair_placement = max(1, int(total_gpu_num / sum([job.job_number for job in runnable_jobs])))
-    candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+    
+    if self.heterogeneity: 
+        cluster_gpu_info = {
+            "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+            "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+        }
+    else: 
+        cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+
+    candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
 
 
     transfer_required_resource_list = list() 
@@ -57,28 +67,25 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
                 forbidden_job_id_list = [jobB.equalivent_allocation_idx, max_equalivent_allocation_idx]
                 transfer_job.equalivent_allocation_idx = forbidden_job_id_list
 
-                for gpu_num in candidate_gpus: 
-                    if gpu_num == 0: 
-                        transfer_required_resource_list.append(gpu_num)
+                for allocations in candidate_allocations: 
+                    if allocation2num(allocations) == 0: 
+                        transfer_required_resource_list.append(allocations)
                         transfer_weight_per_allication_list.append(1e-4 * transfer_job.base_weight_scale)
                         transfer_equalivent_allocation_list.append(forbidden_job_id_list)
                         continue 
                     
-                    if gpu_num > job.max_num_gpus: continue 
-                    placement = () 
-                    while sum(placement) < gpu_num:
-                        placement = (*placement, min(gpu_num - sum(placement), 4))
+                    if allocation2num(allocations) > job.max_num_gpus: continue 
 
-                    from .titan import METHOD, compute_weight_metric
-                    weight = compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
+                    
+                    weight = compute_weight_metric(METHOD, job, allocations, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
                     if np.isinf(weight) or np.isnan(weight): 
-                        transfer_required_resource_list.append(gpu_num)
+                        transfer_required_resource_list.append(allocations)
                         transfer_weight_per_allication_list.append(1e-4 * transfer_job.base_weight_scale)
                         transfer_equalivent_allocation_list.append(forbidden_job_id_list)
                         continue 
                     
                     weight = transfer_job.reweight * weight 
-                    transfer_required_resource_list.append(gpu_num)
+                    transfer_required_resource_list.append(allocations)
                     transfer_weight_per_allication_list.append(weight)
                     transfer_equalivent_allocation_list.append(forbidden_job_id_list)
 
@@ -105,7 +112,17 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
     
     if len(runnable_jobs) > 0: 
         fair_placement = max(1, int(total_gpu_num / sum([job.job_number for job in runnable_jobs])))
-    candidate_gpus = [0, 1, 2, 3, 4] + [4 * i for i in range(2, total_gpu_num // 4 + 1)]
+
+    if self.heterogeneity: 
+        cluster_gpu_info = {
+            "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+            "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+        }
+    else: 
+        cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+
+    candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
+
 
 
     temporal_transfer_required_resource_list = list() 
@@ -128,42 +145,25 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
                 temporal_transfer_job_list.append(temporal_transfer_job)
                 forbidden_job_id_list = [jobA.equalivent_allocation_idx, jobB.equalivent_allocation_idx]
 
-                for gpu_num in candidate_gpus: 
-                    if gpu_num == 0: 
-                        temporal_transfer_required_resource_list.append(gpu_num)
+                for allocations in candidate_allocations: 
+                    if allocation2num(allocations) == 0: 
+                        temporal_transfer_required_resource_list.append(allocations)
                         temporal_transfer_weight_per_allication_list.append(1e-4 * temporal_transfer_job.base_weight_scale)
                         temporal_transfer_equalivent_allocation_list.append(forbidden_job_id_list)
                         continue 
                     
-                    if gpu_num > job.max_num_gpus: continue 
-                    placement = () 
-                    while sum(placement) < gpu_num:
-                        placement = (*placement, min(gpu_num - sum(placement), 4))
+                    if allocation2num(allocations) > job.max_num_gpus: continue 
                     
-                    METHOD = "FAIR"
-                    if METHOD == "TIME":
-                        predict_remaing_time = temporal_transfer_job.predict_remaining_time(placement)
-                        # weight = fair_remaining_time / predict_remaing_time
-                        weight = 1.0 / (predict_remaing_time + 1e-3) # * gpu_num
-                    elif METHOD == "THR": 
-                        throughput = temporal_transfer_job.throughput_estimation(placement, batch_size=job.batch_size)
-                        # step_time = job.application.get_throughput(placement=placement, local_bsz=32)
-                        if isinstance(step_time, (tuple, np.ndarray)): 
-                            step_time = step_time[0]
-                        weight = 32. * gpu_num / step_time / (job.max_progress - job.progress)
-                    elif METHOD == "FAIR": 
-                        predict_remaing_time = max(temporal_transfer_job.predict_remaining_time(placement), self.scheduling_time_interval)
-                        weight = 1.0 * fair_remaining_time / predict_remaing_time 
-                        # print("predict_remaing_time == {}, {}, weight {}".format(fair_remaining_time, predict_remaing_time, weight))
+                    weight = compute_weight_metric(METHOD, job, allocations, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
 
                     if np.isinf(weight) or np.isnan(weight): 
-                        temporal_transfer_required_resource_list.append(gpu_num)
+                        temporal_transfer_required_resource_list.append(allocations)
                         temporal_transfer_weight_per_allication_list.append(1e-4 * temporal_transfer_job.base_weight_scale)
                         temporal_transfer_equalivent_allocation_list.append(forbidden_job_id_list)
                         continue 
                     
                     weight = temporal_transfer_job.reweight * weight 
-                    temporal_transfer_required_resource_list.append(gpu_num)
+                    temporal_transfer_required_resource_list.append(allocations)
                     temporal_transfer_weight_per_allication_list.append(weight)
                     temporal_transfer_equalivent_allocation_list.append(forbidden_job_id_list)
 

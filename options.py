@@ -62,6 +62,7 @@ class Options:
         parser.add_argument('--multi_task_adaptivity', default=False, type=ast.literal_eval, help="whether titan considers multi-task adaptivity")
         parser.add_argument('--temporal_transferability', default=False, type=ast.literal_eval, help="whether titan considers temporal transferability")
         parser.add_argument('--transferability', default=False, type=ast.literal_eval, help="whether titan considers temporal transferability")
+        parser.add_argument('--heterogeneity', default=False, type=ast.literal_eval, help="whether titan considers resource heterogeneity")
         parser.add_argument('--add_ckpt', default=30, type=int, help='checkpoint overhead for simulation')
         parser.add_argument('--physical', default=False, type=ast.literal_eval, help="simulate physical error")
         parser.add_argument('--failure_ratio', default=5, type=float, help="detect failure ratio to simulate")

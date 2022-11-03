@@ -79,15 +79,53 @@ class FoundationModelJob(BaseJob):
 
         return self.get_actual_loss_value(predict_progress)
 
+    def heter_predict_remaining_time(self, placement): 
+        assert isinstance(placement, dict) 
+        self.update_local_bsz(placement)
+        
+        sync_time, accum_time = 0, 0
+        merge_placement = () 
+        total_batch_size = 0
+        for GPU_KIND in ["V100", "A100"]: 
+            single_placement = placement[GPU_KIND]
+            merge_placement += single_placement
+            
+        for GPU_KIND in ["V100", "A100"]: 
+            single_placement = placement[GPU_KIND]
+            merge_placement += single_placement
+            single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=single_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+            accum_time = max(single_step_time - single_sync_time, accum_time)
+            single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+            sync_time = max(single_sync_time, sync_time)
+            total_batch_size += sum(single_placement) * self.atomic_bsz[GPU_KIND] * (self.accum_steps + 1)
+
+        # if sum(merge_placement) >= 8: 
+        #     import pdb; pdb.set_trace() 
+        # accum_time = step_time - sync_time
+        total_time = sync_time + accum_time * (self.accum_steps + 1)
+        delta_progress = self.max_progress - self.progress
+        delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
+        return delta_seconds
+    
+
     def predict_remaining_time(self, placement): 
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict) and len(placement) == 1: 
+            GPU_KIND = list(placement.keys())[0]
+            placement = list(placement.values())[0]
+
         if isinstance(placement, int): 
             num_gpus = placement
             placement = [4 for _ in range(num_gpus // 4)]
             if num_gpus % 4: placement.append(num_gpus % 4)
             placement = tuple(placement)
             assert sum(placement) == num_gpus
+
+        elif isinstance(placement, dict): 
+            return self.heter_predict_remaining_time(placement)
+
         elif isinstance(placement, collections.Iterable): 
-            placcement = tuple([p for p in placement])
+            placement = tuple([p for p in placement])
         else: 
             # print(placement, type(placement))
             raise NotImplementedError
@@ -96,7 +134,8 @@ class FoundationModelJob(BaseJob):
         if hasattr(self, 'topolocy') and self.topology is not None: 
             import pdb; pdb.set_trace() 
         else: 
-            step_time, sync_time = self.application.get_throughput(DEFAULT_GPU_KIND, placement, self.atomic_bsz)
+            step_time, sync_time = self.application.get_throughput(GPU_KIND, placement, self.atomic_bsz)
+        
         accum_time = step_time - sync_time
         total_time = step_time + accum_time * (self.accum_steps + 1)
         total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
@@ -104,8 +143,70 @@ class FoundationModelJob(BaseJob):
         delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
         return delta_seconds
 
+    def compute_local_bsz(self, placement): 
+        app = self.application
+        placement = tuple(filter(None, placement))
+        num_nodes, num_replicas = len(placement), sum(placement)
+        batch_size = self.target_batch_size 
+        local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
+        accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
+        if num_replicas == 1 and batch_size > app.max_local_bsz:
+            accum_steps = max(1, accum_steps)
+                
+        atomic_bsz = math.ceil(local_bsz / (accum_steps + 1) - 1e-8)
+        count = num_replicas * (accum_steps + 1)
+        atomic_bsz = max(min(atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
+        return atomic_bsz
+
+
+    def heter_update_local_bsz(self, placement_dict):
+        app = self.application
+        num_nodes, num_replicas = 0, 0
+        equivalent_num_replicas = 0 
+
+        merge_placement = ()
+        for gpu_kind, placement_item in placement_dict.items(): 
+            merge_placement += placement_item
+
+        atomic_bsz = self.compute_local_bsz(merge_placement)
+
+        step_time_V100, sync_time_V100 = self.application.get_throughput(GPU_KIND="V100", placement=(1,), local_bsz=atomic_bsz)
+        step_time_A100, sync_time_A100 = self.application.get_throughput(GPU_KIND="A100", placement=(1,), local_bsz=atomic_bsz)
+        heter_ratio = step_time_V100 / step_time_A100
+
+        for gpu_kind, placement_item in placement_dict.items(): 
+            num_nodes += len(placement_item)
+            num_replicas += sum(placement_item) 
+            equivalent_num_replicas += sum(placement_item) * heter_ratio
+        
+        batch_size = self.target_batch_size
+        local_bsz = int(math.ceil(batch_size / equivalent_num_replicas - 1e-8))
+        
+        self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
+        if num_replicas == 1 and batch_size > app.max_local_bsz:
+            self.accum_steps = max(1, self.accum_steps)
+                
+        atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
+        count = num_replicas * (self.accum_steps + 1)
+        atomic_bsz = max(min(atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
+        self.atomic_bsz = dict() 
+        self.atomic_bsz["V100"] = atomic_bsz
+        self.atomic_bsz["A100"] = max(min(int(atomic_bsz * heter_ratio), int(self.target_batch_size / count)), self.application.min_local_bsz)
+
 
     def update_local_bsz(self, placement):
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict) and len(placement) == 1: 
+            GPU_KIND = list(placement.keys())[0]
+            placement = list(placement.values())[0]
+
+        if isinstance(placement, dict): 
+            assert len(placement) == 2, 'we only consider two kinds of GPUs'
+            for gpu_kind, placement_item in placement.items():
+                assert sum(placement_item) != 0, 'we consider actual hetergeneous training'
+            self.heter_update_local_bsz(placement)
+            return 
+
         app = self.application
         placement = tuple(filter(None, placement))
         num_nodes, num_replicas = len(placement), sum(placement)
@@ -119,13 +220,48 @@ class FoundationModelJob(BaseJob):
         count = num_replicas * (self.accum_steps + 1)
         self.atomic_bsz = max(min(self.atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
 
+
     def current_device(self, ): 
         if not hasattr(self, 'topology') or self.topology is None or len(self.topology) == 0:  
             return DEFAULT_GPU_KIND
         else: 
-            return self.topology[0]['gpu_kind']
+            for topo in self.topology: 
+                if topo['gpu_kind'] == 'V100': return 'V100'
+            return 'A100'
 
+    def heter_step(self, seconds, **kwargs): 
+        assert isinstance(self.placement, dict)
+        if abs(self.progress - self.max_progress) > 0.1: 
+            self.update_local_bsz(self.placement) 
+            accum_time, sync_time = 0, 0
+            merge_placement = ()
+            total_batch_size = 0
+            for GPU_KIND in ["V100", "A100"]: 
+                single_placement = self.placement[GPU_KIND]
+                merge_placement += single_placement
+            
+            for GPU_KIND in ["V100", "A100"]: 
+                single_placement = self.placement[GPU_KIND]
+                single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=single_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+                accum_time = max(single_step_time - single_sync_time, accum_time)
+                _, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+                sync_time = max(single_sync_time, sync_time)
+                total_batch_size += sum(single_placement) * self.atomic_bsz[GPU_KIND] * (self.accum_steps + 1)
+            
+            # accum_time = step_time - sync_time
+            total_time = sync_time + accum_time * (self.accum_steps + 1)
 
+            delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
+            delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 
+            self.progress += delta_progress
+            if abs(self.progress - self.max_progress) <= 0.1: 
+                self.completion_time = self.staying_time + delta_seconds + self.submission_time 
+            self.attained_service += delta_seconds * sum(merge_placement) 
+        
+        self.staying_time += delta_seconds 
+        self.running_time += delta_seconds
+
+    
     def step(self, seconds, **kwargs):
         if not self.placement:
             # No resources are allocated to this job.
@@ -141,12 +277,21 @@ class FoundationModelJob(BaseJob):
             self.status = JobState.RUNNING
             return 
 
+
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
         self.staying_time += delay
-
         self.status = JobState.RUNNING
+
+        if isinstance(self.placement, dict): 
+            if len(self.placement) == 2: 
+                self.heter_step(seconds, **kwargs)
+                return 
+            else: 
+                self.placement = list(self.placement.values())[0]
+
+
         if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
             self.update_local_bsz(placement) 
@@ -166,9 +311,6 @@ class FoundationModelJob(BaseJob):
         self.staying_time += delta_seconds 
         self.running_time += delta_seconds
 
-    def early_stop(self, cur_time): 
-        assert self.completion_time is None
-        self.completion_time = cur_time 
 
     def reallocate(self, placement, **kwargs):
         if placement:
@@ -346,9 +488,9 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
 
             self.attained_service += delta_seconds * sum(placement) 
         
-        
         self.staying_time += delta_seconds 
         self.running_time += delta_seconds
+
 
     def register_complete_job(self, fm_job, completion_time): 
         fm_job.attained_service = self.attained_service 

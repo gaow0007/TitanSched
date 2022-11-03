@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import datetime
 from easydict import EasyDict
 sys.path.insert(0, './')
+from client.application.foundation_model import TaskScale
 from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS 
 seed=42
 
@@ -166,7 +167,7 @@ def full_main():
         sample.set_index("name").to_csv('{}/{}.csv'.format(args.save_root, trace_name))
 
 
-def main(model, APPLICATIONS): 
+def main(model, APPLICATIONS, task_pair): 
     # mlaas_trace = parse_mlass('full_trace/MLaaS.csv')
     # philly_trace = parse_philly('full_trace/Philly.csv')
     # helios_trace = parse_helios('full_trace/Helios.csv')
@@ -180,8 +181,8 @@ def main(model, APPLICATIONS):
     
     for trace_name, trace in [('BM', bm_trace)]: 
         records = list() 
-        for application_id in range(args.num_jobs // TRIAL_CNT): 
-            appname = list(APPLICATIONS.keys())[::-1][application_id]
+        for application_id, appname in enumerate(task_pair): 
+            # appname = list(APPLICATIONS.keys())[::-1][application_id]
             cnt = 0 
             
             for lr in ['1e-5', '2e-5', '4e-5', '1e-4', '4e-4', '1e-3', '1e-2']: 
@@ -286,9 +287,14 @@ if __name__ == '__main__':
             for task in FOUNDATIONMODELAPPLICATIONS.keys(): 
                 if model_name in task: 
                     APPLICATIONS[task] = FOUNDATIONMODELAPPLICATIONS[task]
-            for repeat_id in range(args.repeat_number): 
+            repeat_pairs = list() 
+            for taskA in APPLICATIONS.keys(): 
+                for taskB in APPLICATIONS.keys(): 
+                    if TaskScale[taskA.split('@')[-1]] < TaskScale[taskB.split('@')[-1]]: 
+                        repeat_pairs.append((taskA, taskB))
 
-                workload = main(model_name, APPLICATIONS)
+            for repeat_id, task_pair in enumerate(repeat_pairs): 
+                workload = main(model_name, APPLICATIONS, task_pair)
                 csv = workload.set_index("name").to_csv(os.path.join(args.save_root, 'workload-{}.csv'.format(repeat_id)))
                 print(workload.groupby(["application", "num_gpus", "target_batch_size"])
                     .size().reset_index(name="count"))

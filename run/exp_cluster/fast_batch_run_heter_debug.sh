@@ -22,12 +22,12 @@ do
             
             add_ckpt=30
             
-            for heterogeneity in True # False True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
+            for heterogeneity in  False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
             do 
                 schedule=titan
                 extra_cmd=""
                 scheduling_time_interval=300
-                ident="heter_${heterogeneity}_${schedule}_${trace}"
+                ident="heter_debug_${schedule}_${trace}"
                 save_log_dir=result/heter/$schedule/$trace/
                 mkdir -p $save_log_dir
                 multi_task_adaptivity=False
@@ -57,10 +57,8 @@ do
                 $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                             --save_log_dir=${save_log_dir} --ident=$ident \
                             --placement=consolidate --num_node_p_switch=$num_node_p_switch \
-                            --heter=True --heter_gpus V100 A100 \
-                            --heterogeneity=$heterogeneity \
                             --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} # &
+                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} #  &
             done 
 
         fi

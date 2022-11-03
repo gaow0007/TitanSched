@@ -183,6 +183,7 @@ class MetaPlaceMent(object):
         
     
     def place_jobs(self, job): 
+        # TODO, mix allocation
         allocation_vector = [0 for _ in range(self.node_count)]
         current_node_id = 0 
         for key in self.cluster_keys: 

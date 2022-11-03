@@ -271,13 +271,16 @@ class TitanSolver(object):
             m.objective = maximize(xsum(obj_list[i] for i in range(len(obj_list)))) 
         else: 
             m.objective = minimize(xsum(obj_list[i] for i in range(len(obj_list)))) 
+        
+        for key in cluster_capacity.keys(): 
+            resource_list = [sum(required_resource_list[i][key]) if key in required_resource_list[i] else 0 for i in range(var_len)]
+            m += xsum(X[i] * resource_list[i] for i in range(var_len)) <= cluster_capacity[key]
 
-        m += xsum(X[i] * required_resource_list[i] for i in range(var_len)) <= cluster_capacity
         left, right = 0, 0
         left_list, right_list = list(), list() 
         
         for i in range(unique_job_num): 
-            print('i == {}, {}'.format(i, len(equalivent_allocation_list)))
+            # print('i == {}, {}'.format(i, len(equalivent_allocation_list)))
             for j in range(left, len(equalivent_allocation_list)): 
                 if equalivent_allocation_list[j] != i: 
                     right = j 
@@ -299,5 +302,5 @@ class TitanSolver(object):
                     allocated_gpu_solution.append(required_resource_list[j])
                     allocated = True 
             if not allocated: 
-                allocated_gpu_solution.append(0) 
+                allocated_gpu_solution.append(None) 
         return allocated_gpu_solution
