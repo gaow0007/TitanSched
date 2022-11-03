@@ -48,7 +48,7 @@ class Cluster(object):
         print('#ofswitch: %d, #ofnode: %d, #ofgpu: %d, #ofcpu: %d'%(self.num_switch, self.num_node, self.num_gpu, self.num_cpu))
 
     
-    def init_infra(self, num_switch=0, num_node_p_switch=0, num_gpu_p_node=0, num_cpu_p_node=0, mem_p_node=0):
+    def init_infra(self, num_switch=0, num_node_p_switch=0, num_gpu_p_node=0, num_cpu_p_node=0, mem_p_node=0, gpu_kind='V100'):
         assert self.init == False and self.ir_init == False, 'only init once'
         self.init = True
         # Init and create cluster infration entities (switches, nodes) by using class _Switch, _Node
@@ -59,6 +59,7 @@ class Cluster(object):
             switch_instance = _Switch(switch_id, self.num_node_p_switch, self.num_gpu_p_node, self.num_cpu_p_node, self.mem_p_node) 
             switch_instance.add_nodes(self.num_node_p_switch, self.num_gpu_p_node, self.num_cpu_p_node, self.mem_p_node, self)
             self.switch_list.append(switch_instance)
+        self.gpu_kind =gpu_kind
 
 
     def set_ir_spec(self, cluster_info):

@@ -8,6 +8,28 @@ from .schedutils import resource_summary, schedule_summary
 from .titan_solver import TitanSolver, TitanMultiTaskAdaptivitySolver
 from .titan_mtask import mtask_builder
 from .titan_transfer import transfer_builder, temporal_transfer_builder
+METHOD="FFT"
+
+
+def compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval): 
+    if METHOD == "TIME":
+        predict_remaing_time = job.predict_remaining_time(placement)
+        # weight = fair_remaining_time / predict_remaing_time
+        weight = 1.0 / (predict_remaing_time + 1e-3) # * gpu_num
+    elif METHOD == "THR": 
+        throughput = job.throughput_estimation(placement, batch_size=job.batch_size)
+        # step_time = job.application.get_throughput(placement=placement, local_bsz=32)
+        if isinstance(step_time, (tuple, np.ndarray)): 
+            step_time = step_time[0]
+        weight = 32. * sum(placement) / step_time / (job.max_progress - job.progress)
+    elif METHOD == "FAIR": 
+        predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
+        weight = 1.0 * fair_remaining_time / predict_remaing_time 
+    elif METHOD == "FFT": 
+        predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
+        weight = 1.0 * (predict_remaing_time + cur_time - job.submission_time) / (fair_remaining_time + cur_time - job.submission_time)
+    return weight
+
 
 
 class TitanScheduler(BaseScheduler):
@@ -21,9 +43,9 @@ class TitanScheduler(BaseScheduler):
         self.scheduling_time_interval = kwargs.get('scheduling_time_interval', 10)
         self.save_dir = kwargs.get('save_dir', 'result/')
         self.multi_task_adaptivity = kwargs.get('multi_task_adaptivity', False)
-        if self.multi_task_adaptivity: # 0.391540
+        if self.multi_task_adaptivity:
             self.titan_solver = TitanMultiTaskAdaptivitySolver(method='multi-task-adaptivity', logger=self.logger)
-        else: # 0.391540
+        else:
             self.titan_solver = TitanSolver(method='naive')
         self.temporal_transferability = (self.multi_task_adaptivity and kwargs.get('temporal_transferability', False))
         self.transferability = (self.multi_task_adaptivity and kwargs.get('transferability', False))
@@ -38,10 +60,10 @@ class TitanScheduler(BaseScheduler):
         #         if job not in tot_jobs: 
         #             import pdb; pdb.set_trace() 
 
+
     def finish_all_jobs(self, ): 
         return len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) == 0
     
-
     def release_job_resource(self, job, status=JobState.END):
         if self.placement.name == 'gandiva':
             ret = self.cluster_manager.release_gandiva_job_resource(job, status)
@@ -53,7 +75,10 @@ class TitanScheduler(BaseScheduler):
 
     def try_allocate_resoure(self, job):
         if self.placement.name in ['random', 'consolidate', 'gandiva', 'local_search']:
-            ret = self.placement.place_jobs(job)
+            if self.placement.__alias__ == 'meta': 
+                ret = self.placement.place_jobs(job)
+            else: 
+                ret = self.placement.place_jobs(job)
         else:
             raise NotImplementedError
         return ret
@@ -219,22 +244,9 @@ class TitanScheduler(BaseScheduler):
                 while sum(placement) < gpu_num:
                     placement = (*placement, min(gpu_num - sum(placement), 4))
                 
-                METHOD = "FAIR"
-                if METHOD == "TIME":
-                    predict_remaing_time = job.predict_remaining_time(placement)
-                    # weight = fair_remaining_time / predict_remaing_time
-                    weight = 1.0 / (predict_remaing_time + 1e-3) # * gpu_num
-                elif METHOD == "THR": 
-                    throughput = job.throughput_estimation(placement, batch_size=job.batch_size)
-                    # step_time = job.application.get_throughput(placement=placement, local_bsz=32)
-                    if isinstance(step_time, (tuple, np.ndarray)): 
-                        step_time = step_time[0]
-                    weight = 32. * gpu_num / step_time / (job.max_progress - job.progress)
-                elif METHOD == "FAIR": 
-                    predict_remaing_time = max(job.predict_remaining_time(placement), self.scheduling_time_interval)
-                    weight = 1.0 * fair_remaining_time / predict_remaing_time 
-                    print("predict_remaing_time == {}, {}, weight {}".format(fair_remaining_time, predict_remaing_time, weight))
-
+                # METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval
+                weight = compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
+                
                 # print(fair_placement, placement, weight, job.max_num_gpus)
                 # weight = 32. * gpu_num / step_time / (job.max_progress - job.progress) 
                 # print('max_progress', job.max_progress, job.progress, weight)
@@ -413,7 +425,7 @@ class TitanScheduler(BaseScheduler):
 
         if self.multi_task_adaptivity:
             for job in mtask_jobs: 
-                print('job name {}, job placement {}'.format(job.name, job.placement))
+                # print('job name {}, job placement {}'.format(job.name, job.placement))
                 if job.placement is not None:
                     self.logger.info('remove job A {}, job B {}'.format(job.modelA.name, job.modelB.name))
                     self.logger.info('mtask job equalivent_allocation_idx {}'.format(job.equalivent_allocation_idx))

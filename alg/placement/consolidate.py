@@ -79,23 +79,36 @@ class ConsolidatePlaceMent(BasePlaceMent):
         return best_select_list
   
 
-    def place_jobs(self, job):
+    def place_jobs(self, job, target_num_gpus=None, reallocate=True):
         '''
         consolidate first, but randomly pick machines;
         if cross machines, still try to consolidate.
         if can't consolidate, consider spreed the jobs;
         also PS is randomly placed on the selected machines
         '''
+        if target_num_gpus is None: 
+            target_num_gpus = job.target_num_gpus
+
+
+
         # early return false
-        if self.cluster_manager.check_free_gpus() < job.target_num_gpus: return False
+        if self.cluster_manager.check_free_gpus() < target_num_gpus: 
+            if reallocate: 
+                return False
+            else: 
+                return list() , list() 
+
 
         # place as few nodes as possible
         w_node_list, w_switch_list = list(), list()
-        demand_node_list = self.select_fewest_node_list(job.target_num_gpus)
+        demand_node_list = self.select_fewest_node_list(target_num_gpus)
         demand_node_gpu_list = [node.check_total_gpus() for node, _ in demand_node_list]
-        if sum(demand_node_gpu_list) - min(demand_node_gpu_list) >= job.target_num_gpus:
-            return False
 
+        if sum(demand_node_gpu_list) - min(demand_node_gpu_list) >= target_num_gpus:
+            if reallocate: 
+                return False
+            else: 
+                return list(), list() 
 
         placement = list() 
         for switch_intance in self.cluster_manager.switch_list: 
@@ -112,7 +125,7 @@ class ConsolidatePlaceMent(BasePlaceMent):
             assert allocated == True, 'should exist enough gpu resource'
 
         
-        assert len(w_node_list) == job.target_num_gpus
+        assert len(w_node_list) == target_num_gpus
         topology = list() 
         for i, (s_id, node) in enumerate(zip(w_switch_list, w_node_list)):
 
@@ -125,10 +138,14 @@ class ConsolidatePlaceMent(BasePlaceMent):
                 'tasks': list(), 
             }
             topology.append({
+                'gpu_kind': self.cluster_manager.gpu_kind, 
                 'switch' : s_id, 
                 'nodes' : [node_dict],
             })
-        
-        job.reallocate(placement, topology=topology) # , topology=Topology(job=job, placements=topology))
-        return True
+        if reallocate: 
+            job.reallocate(placement, topology=topology) # , topology=Topology(job=job, placements=topology))
+            return True
+        else: 
+            return placement, topology
+
 

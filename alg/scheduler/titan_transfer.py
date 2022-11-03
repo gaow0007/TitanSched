@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 import numpy as np 
 from client.job.foundation_model import FoundationModelJob, TransferFoundationModelJob, TemporalTransferFoundationModelJob
 from client.job.state import JobState
+
 TRANSFER_MAX_ALLOCATION_IDX=4096
 TEMPORAL_TRANSFER_MAX_ALLOCATION_IDX=8192
 
@@ -67,23 +68,9 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
                     placement = () 
                     while sum(placement) < gpu_num:
                         placement = (*placement, min(gpu_num - sum(placement), 4))
-                    
-                    METHOD = "FAIR"
-                    if METHOD == "TIME":
-                        predict_remaing_time = transfer_job.predict_remaining_time(placement)
-                        # weight = fair_remaining_time / predict_remaing_time
-                        weight = 1.0 / (predict_remaing_time + 1e-3) # * gpu_num
-                    elif METHOD == "THR": 
-                        throughput = transfer_job.throughput_estimation(placement, batch_size=job.batch_size)
-                        # step_time = job.application.get_throughput(placement=placement, local_bsz=32)
-                        if isinstance(step_time, (tuple, np.ndarray)): 
-                            step_time = step_time[0]
-                        weight = 32. * gpu_num / step_time / (job.max_progress - job.progress)
-                    elif METHOD == "FAIR": 
-                        predict_remaing_time = max(transfer_job.predict_remaining_time(placement), self.scheduling_time_interval)
-                        weight = 1.0 * fair_remaining_time / predict_remaing_time 
-                        # print("predict_remaing_time == {}, {}, weight {}".format(fair_remaining_time, predict_remaing_time, weight))
 
+                    from .titan import METHOD, compute_weight_metric
+                    weight = compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
                     if np.isinf(weight) or np.isnan(weight): 
                         transfer_required_resource_list.append(gpu_num)
                         transfer_weight_per_allication_list.append(1e-4 * transfer_job.base_weight_scale)

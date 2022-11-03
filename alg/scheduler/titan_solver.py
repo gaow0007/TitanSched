@@ -275,7 +275,9 @@ class TitanSolver(object):
         m += xsum(X[i] * required_resource_list[i] for i in range(var_len)) <= cluster_capacity
         left, right = 0, 0
         left_list, right_list = list(), list() 
+        
         for i in range(unique_job_num): 
+            print('i == {}, {}'.format(i, len(equalivent_allocation_list)))
             for j in range(left, len(equalivent_allocation_list)): 
                 if equalivent_allocation_list[j] != i: 
                     right = j 

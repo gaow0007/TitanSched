@@ -63,7 +63,7 @@ class FoundationModelSpeed(object):
     
     @memoize
     def get_throughput(self, GPU_KIND, placement, local_bsz):
-        print(placement, local_bsz)
+        # print(placement, local_bsz)
         placement = tuple(filter(None, placement))
         placement = min(placement[i:] + placement[:i]
                         for i in range(len(placement)))
@@ -175,6 +175,9 @@ class FoundationModelApplication(object):
         assert target_metric is not None 
         if kwargs.get('transfer') == True: 
             insert_key = FMStats.transfer_info.generate_dataset_key(kwargs.get('taskA'), kwargs.get('taskB'))
+            if insert_key not in FMStats.transfer_info.performance_report[self.model_name]: 
+                # import pdb; pdb.set_trace() 
+                return 1000
             performance_traj = FMStats.transfer_info.performance_report[self.model_name][insert_key] 
             metric_info = performance_traj[self.metric_key]
             epoch_info = performance_traj[self.metric_key + '_epoch']
@@ -203,6 +206,20 @@ class FoundationModelApplication(object):
         
         return self.max_epochs if min_epoch is None else min_epoch
     
+    def query_epoch(self, target_lr=None, target_gradient_steps=None, target_epoch=None):
+        assert target_lr is not None and target_gradient_steps is not None
+        performance_traj =  FMStats.hpo_info.performance_report[self.model_name][self.task_name][target_lr][target_gradient_steps]
+        metric_info = performance_traj[self.metric_key]
+        epoch_info = performance_traj[self.metric_key + '_epoch']
+        epoch_metric_list = sorted([(epoch, metric) for (epoch, metric) in zip(epoch_info, metric_info)])
+        max_metric = 0
+        for epoch, metric in epoch_metric_list: 
+            max_metric = max(metric, max_metric)
+            if epoch >= target_epoch: 
+                return max_metric
+        import pdb; pdb.set_trace() 
+
+
     def query_index(self, ): 
         return query_index(self.task_name)
 

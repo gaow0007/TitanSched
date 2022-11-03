@@ -17,17 +17,17 @@ do
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
-            num_node_p_switch=8
+            num_node_p_switch=16
             num_gpu_p_node=4
             
             add_ckpt=30
             
-            for schedule in  titan # titan  tiresias optimus pollux # titan pollux tiresias optimus
+            for schedule in  pollux # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
             do 
                 extra_cmd=""
                 scheduling_time_interval=300
-                ident="heter_${schedule}_${trace}_${failure_ratio}"
-                save_log_dir=result/heter/$schedule/$trace/${failure_ratio}
+                ident="heter_${schedule}_${trace}"
+                save_log_dir=result/heter/$schedule/$trace/
                 mkdir -p $save_log_dir
                 multi_task_adaptivity=True
 
@@ -55,9 +55,8 @@ do
                 $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                             --save_log_dir=${save_log_dir} --ident=$ident \
                             --placement=consolidate --num_node_p_switch=$num_node_p_switch \
-                            --heter=True --heter_gpus V100 \
+                            --heter=True --heter_gpus V100 A100 \
                             --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                            --physical=False --failure_ratio=$failure_ratio \
                             --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} # &
                 exit
             done 

@@ -94,6 +94,8 @@ class _Node(object):
 
     def release_gpus(self, num_gpu, job):
         if num_gpu == 0: return True
+        if self.free_gpus + num_gpu > self.num_gpu: 
+            import pdb; pdb.set_trace() 
         assert self.free_gpus + num_gpu <= self.num_gpu
         for gpu_instance in self.gpu_list:
             if job in gpu_instance.job_list:

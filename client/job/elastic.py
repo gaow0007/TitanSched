@@ -22,6 +22,7 @@ import collections
 import math 
 import numpy as np 
 
+DEFAULT_GPU_KIND="V100"
 
 class ResourceElasticJob(BaseJob): 
     __alias__ = 'resource_elastic' 
@@ -146,7 +147,7 @@ class BatchElasticJob(BaseJob):
         self.num_restarts = None
         
         self.add_ckpt = kwargs.get('add_ckpt', 0)
-        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(1, pipeline=False)
+        self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
         # statistical information
         if hasattr(df, 'target_metric'): 
@@ -234,6 +235,12 @@ class BatchElasticJob(BaseJob):
         self.perf_params = fit_perf_params(
             num_nodes, num_replicas, local_bsz, compute_time, step_time)
 
+    def current_device(self, ): 
+        if not hasattr(self, 'topology') or self.topology is None or len(self.topology) == 0:  
+            return DEFAULT_GPU_KIND
+        else: 
+            return self.topology[0]['gpu_kind']
+            
     def step(self, seconds, interference=0.0):
         if not self.placement:
             # No resources are allocated to this job.
@@ -271,7 +278,7 @@ class BatchElasticJob(BaseJob):
                 scale = batch_size / self.application.init_batch_size
             # Calculate true (simulated) throughput.
             step_time, sync_time = \
-                self.application.get_throughput(placement, self.atomic_bsz)
+                self.application.get_throughput(GPU_KIND=self.current_device(), placement=placement, local_bsz=self.atomic_bsz)
             accum_time = step_time - sync_time
             # Calculate true (simulated) efficiency.
             if self.target_batch_size is not None: 
@@ -319,7 +326,7 @@ class BatchElasticJob(BaseJob):
             else:
                 assert 'base job should not be preepmted'
                 self.num_restarts += 1
-            self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(self.placement, pipeline=False)
+            self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
         else:  # De-allocate all resources.
             self.placement = None 

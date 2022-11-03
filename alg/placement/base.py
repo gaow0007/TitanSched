@@ -2,8 +2,7 @@ import os, sys
 import math
 import random
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
-from server.switch import _Switch
-from server.node import _Node
+from server import meta
 from utils import util
 from alg.utils.topology import Topology
 from abc import ABCMeta, abstractmethod
@@ -165,12 +164,58 @@ class BasePlaceMent(metaclass=ABCMeta):
         raise NotImplementedError
         
     
+class MetaPlaceMent(object):
+    __alias__ = 'meta'
+    def __init__(self, placement_info, name):
+        self.name = name 
+        self.placement_info = placement_info
+        self.cluster_keys = sorted(list(self.placement_info.keys()))
+        self.node_count = 0 
+        for key in self.cluster_keys: 
+            cluster_instance = self.placement_info[key].cluster_manager
+            self.node_count += self.node_count_of_cluster(cluster_instance=cluster_instance)
+
+    def node_count_of_cluster(self, cluster_instance):
+        node_count = 0
+        for switch in cluster_instance.switch_list: 
+            node_count += len(switch.node_list)
+        return node_count
+        
+    
+    def place_jobs(self, job): 
+        allocation_vector = [0 for _ in range(self.node_count)]
+        current_node_id = 0 
+        for key in self.cluster_keys: 
+            placementer = self.placement_info[key]
+            placement, topology =  placementer.place_jobs(job, target_num_gpus=job.target_num_gpus, reallocate=False)
+            node_count = self.node_count_of_cluster(placementer.cluster_manager)
+            if sum(placement) == job.target_num_gpus: 
+                allocation_vector[current_node_id:current_node_id+node_count] = placement
+                job.reallocate(placement, topology=topology)
+                return True 
+            else: 
+                current_node_id += node_count
+        
+        return False 
+        
+        
+    
 
 
 def PlaceMentFactory(cluster_manager, name):
     # print(BasePlaceMent.__subclasses__())
-    for subclass in BasePlaceMent.__subclasses__():
-        if subclass.__alias__ == name:
-            return subclass(cluster_manager=cluster_manager, name=name)
+    if isinstance(cluster_manager, meta.MetaCluster): 
+        placement_info = dict() 
+        for key, cluster_instance in sorted(cluster_manager.cluster_instance_info.items()): 
+            for subclass in BasePlaceMent.__subclasses__():
+                if subclass.__alias__ == name:
+                    pm = subclass(cluster_manager=cluster_instance, name=name)
+                    placement_info[key] = pm 
+                    break 
+        return MetaPlaceMent(placement_info, name=name)
+    else: 
+        for subclass in BasePlaceMent.__subclasses__():
+            if subclass.__alias__ == name:
+                return subclass(cluster_manager=cluster_manager, name=name)
 
     raise NotImplementedError

@@ -3,6 +3,7 @@ import os, sys
 import csv, json
 from alg.scheduler.edf import EDFScheduler
 from alg.scheduler.titan import TitanScheduler
+from alg.scheduler.hpo_titan import HPOTitanScheduler
 from client.job.base import JobManager
 import numpy as np
 import pandas as pd
@@ -13,7 +14,7 @@ from alg import (PlaceMentFactory, YarnCSScheduler, TiresiasScheduler, \
                 GandivaScheduler, ThemisScheduler, ShortestRemainingTimeFirstScheduler, \
                 TetriSchedScheduler, SigmaScheduler, GenieScheduler, OptimusScheduler, PolluxScheduler)
 
-from server import cluster, profiler
+from server import cluster, meta
 from client.job import (JobFactory, BaseJob, ResourceElasticJob, BatchElasticJob, HeterogeneousJob, FoundationModelJob, PreemptJob)
 from client.job.state import JobState, DDLState
 from client.user import (UserManager, VanillaUser, TimeAwareUser) 
@@ -43,6 +44,8 @@ def parse_job_file(filename, job_type, job_manager, opt):
             job_instance = JobFactory(name=job_type)(name=row.name, submission_time=row.submission_time,\
                                                 target_duration=row.duration, target_num_replicas=row.num_gpus, target_gpus_per_replica=1)
         elif job_type == 'foundation_model': 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
+        elif job_type == 'hpo_foundation_model': 
             job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
         else: 
             job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
@@ -82,28 +85,34 @@ def prepare_cluster(opt):
     if opt.num_node_p_switch == -1:
         partition_size_info = prepare_partion_size(opt.user_partition_size)
         opt.num_node_p_switch = partition_size_info[opt.user_partition] 
-        
-    cluster_instance = cluster.Cluster(num_switch=opt.num_switch, 
-                            num_node_p_switch=opt.num_node_p_switch, 
-                            num_gpu_p_node=opt.num_gpu_p_node,
-                            num_cpu_p_node=opt.num_cpu_p_node, 
-                            mem_p_node=opt.mem_p_node)
 
-    cluster_instance.init_infra(num_switch=opt.num_switch, 
-                        num_node_p_switch=opt.num_node_p_switch, 
-                        num_gpu_p_node=opt.num_gpu_p_node, 
-                        num_cpu_p_node=opt.num_cpu_p_node, 
-                        mem_p_node=opt.mem_p_node)
+    cluster_info = list() 
     if opt.heter: 
+        
         num_node_p_gpu_kind = opt.num_node_p_switch // len(opt.heter_gpus)
-        for heter_id, heter_gpu in enumerate(opt.heter_gpus): 
-            for node_id, node in enumerate(cluster_instance.switch_list[0].node_list[heter_id * num_node_p_gpu_kind: (heter_id+1) * num_node_p_gpu_kind]):
-                node.GPU_KIND = heter_gpu
-                print(node_id, heter_gpu)
+        for heter_id, heter_gpu in enumerate(sorted(opt.heter_gpus)): 
+            cluster_info.append((heter_id, heter_gpu, num_node_p_gpu_kind))
     else: 
-        for node in cluster_instance.switch_list[0].node_list: 
-            node.GPU_KIND = 'V100' 
-    return cluster_instance 
+        cluster_info.append((0, 'V100', opt.num_node_p_switch))
+
+    cluster_instance_info = dict()
+    
+    for heter_id, gpu_name, num_node_p_switch in cluster_info: 
+        cluster_instance = cluster.Cluster(num_switch=opt.num_switch, 
+                                num_node_p_switch=num_node_p_switch, 
+                                num_gpu_p_node=opt.num_gpu_p_node,
+                                num_cpu_p_node=opt.num_cpu_p_node, 
+                                mem_p_node=opt.mem_p_node)
+
+        cluster_instance.init_infra(num_switch=opt.num_switch, 
+                            num_node_p_switch=num_node_p_switch, 
+                            num_gpu_p_node=opt.num_gpu_p_node, 
+                            num_cpu_p_node=opt.num_cpu_p_node, 
+                            mem_p_node=opt.mem_p_node, 
+                            gpu_kind=gpu_name,
+                            )
+        cluster_instance_info[gpu_name] = cluster_instance
+    return meta.MetaCluster(cluster_instance_info)
 
 
 def prepare_cluster_shadow():
@@ -216,7 +225,12 @@ def main(opt, logger):
                                         lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
     elif opt.schedule == 'titan': 
         scheduler = TitanScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
-                                    logger=logger, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir, multi_task_adaptivity=opt.multi_task_adaptivity, temporal_transferability=opt.temporal_transferability)
+                                    logger=logger, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir, \
+                                    multi_task_adaptivity=opt.multi_task_adaptivity, temporal_transferability=opt.temporal_transferability)
+    elif opt.schedule == 'hpo_titan': 
+        scheduler = HPOTitanScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
+                                    logger=logger, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir, \
+                                    multi_task_adaptivity=opt.multi_task_adaptivity, temporal_transferability=opt.temporal_transferability)
     elif opt.schedule == 'optimus': 
         scheduler = OptimusScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, scheduling_time_interval=opt.scheduling_time_interval, 

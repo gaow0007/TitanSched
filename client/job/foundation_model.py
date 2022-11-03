@@ -46,8 +46,12 @@ class FoundationModelJob(BaseJob):
         self.accum_steps = 0
         self.physical = kwargs.get('physical', 'False')
         self.failure_ratio = kwargs.get('failure_ratio', 0.05)
+        self.next_target_epoch = 0 
 
-        
+
+    def get_current_epoch(self, ): 
+        return self.progress / self.application.progress_per_epoch
+
     def get_actual_loss_value(self, predict_progress):
         normalized_progress = min(1, 1.0 * predict_progress / self.max_progress)
         return 1000. / (1 + 0.25 * normalized_progress)
@@ -119,7 +123,7 @@ class FoundationModelJob(BaseJob):
         if not hasattr(self, 'topology') or self.topology is None or len(self.topology) == 0:  
             return DEFAULT_GPU_KIND
         else: 
-            return self.topology[0]['nodes'][0]['node_instance'].GPU_KIND
+            return self.topology[0]['gpu_kind']
 
 
     def step(self, seconds, **kwargs):
@@ -162,7 +166,9 @@ class FoundationModelJob(BaseJob):
         self.staying_time += delta_seconds 
         self.running_time += delta_seconds
 
-
+    def early_stop(self, cur_time): 
+        assert self.completion_time is None
+        self.completion_time = cur_time 
 
     def reallocate(self, placement, **kwargs):
         if placement:
@@ -173,7 +179,7 @@ class FoundationModelJob(BaseJob):
                 self.topology = None 
 
             if self.num_restarts is None:
-                self.num_restarts = 0
+                self.num_restarts = 1
             else:
                 self.num_restarts += 1
             kwargs['pipeline'] = False

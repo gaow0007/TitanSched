@@ -23,7 +23,7 @@ do
             add_ckpt=30
             for multi_task_adaptivity in False True
             do 
-                for schedule in  titan # pollux titan themis tiresias optimus srtf # pollux titan themis tiresias optimus srtf  # pollux # titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in titan # titan themis tiresias optimus srtf # pollux titan themis tiresias optimus srtf # pollux titan themis tiresias optimus srtf  # pollux # titan themis tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300

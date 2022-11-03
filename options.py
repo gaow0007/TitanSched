@@ -6,7 +6,7 @@ class Options:
         parser = argparse.ArgumentParser(description='Benchmark Sched')
         parser.add_argument('--placement', default='random', choices=['random', 'consolidate', 'gandiva', 'local_search', 'consolidate_random', 'local_search_rev'], type=str, help='placement policy')
         parser.add_argument('--schedule', default='time-aware-with-lease', type=str, choices=['tiresias', 'gittins', 'gandiva', 'edf', 'srtf', 'tetri-sched', \
-                                                                                            'yarn-cs', 'themis', 'genie', 'optimus', 'sigma', 'titan', 'pollux'], help='schedue policy')
+                                                                                            'yarn-cs', 'themis', 'genie', 'optimus', 'sigma', 'titan', 'pollux', 'hpo_titan'], help='schedue policy')
         parser.add_argument('--cluster_partition', default='all', type=str, help='cluster partition way')
         parser.add_argument('--profile', default=False, type=ast.literal_eval, help='whether profile')
         parser.add_argument('--profile_node_num', default=4, type=int, help='node num')
@@ -45,7 +45,7 @@ class Options:
         parser.add_argument('--disc_priority_k', default=5, type=int,
                             help='lease specific: how many discrete priority class')
         parser.add_argument('--job_type', default='base',
-                            choices=['base', 'batch_elastic', 'resource_elastic', 'heterogeneous', 'preempt', 'foundation_model'],
+                            choices=['base', 'batch_elastic', 'resource_elastic', 'heterogeneous', 'preempt', 'foundation_model', 'hpo_foundation_model'],
                             type=str, help='job type')
         parser.add_argument('--job_selection', default='random',
                             choices=['random', 'fifo', 'smallestfirst', '2das', 'shortestremainfirst', 'fairness', 'disc_fairness', 'job_reward', 'genie'],
