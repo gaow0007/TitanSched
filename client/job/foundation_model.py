@@ -28,7 +28,6 @@ class FoundationModelJob(BaseJob):
         self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
         
-
         # statistical information
         if hasattr(df, 'target_metric'): 
             self.target_gradient_steps = df.target_gradient_steps

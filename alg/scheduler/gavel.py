@@ -162,7 +162,7 @@ class GavelScheduler(BaseScheduler):
                 if job.status == JobState.PENDING:
                     should_run_jobs.append(job)
                 elif job.status == JobState.RUNNING: 
-                    job.last_running_time = cur_time 
+                    job.last_running_time = job.last_running_time + self.lease_term_interval
                     pass
                 else: 
                     raise NotImplementedError

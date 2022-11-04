@@ -93,7 +93,7 @@ class ThemisScheduler(BaseScheduler):
         total_job_num = len(self.pending_jobs) + len(self.running_jobs)
         # total_gpu_request = sum([job.target_num_gpus for job in (self.pending_jobs + self.running_jobs)])
         total_gpu_request = len(self.pending_jobs) + len(self.running_jobs)
-        weighted_share = self.cluster_manager.check_total_gpus() / (total_gpu_request + 1e-3)
+        weighted_share = self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3)
         for job in self.pending_jobs + self.running_jobs: 
             interval = cur_time - max(prev_time, job.submission_time)
             if not hasattr(job, 'deserved_service'): 
@@ -140,7 +140,6 @@ class ThemisScheduler(BaseScheduler):
             job.step(seconds=cur_time - max(prev_time, job.submission_time))
     
 
-
     def flush_runnable_jobs(self, prev_time, cur_time): 
 
         # 1. sorted by shortest remaining time 
@@ -160,12 +159,14 @@ class ThemisScheduler(BaseScheduler):
         should_run_jobs, should_preempt_jobs = list(), list()
 
         for job in self.runnable_jobs:
+            # if job.finish_time_fairness < 0.9: 
+            #     continue 
             if job.target_num_gpus <= total_resource_count:
                 total_resource_count -= job.target_num_gpus
                 if job.status == JobState.PENDING:
                     should_run_jobs.append(job)
                 elif job.status == JobState.RUNNING: 
-                    job.last_running_time = cur_time 
+                    job.last_running_time = job.last_running_time + self.lease_term_interval
                     pass
                 else: 
                     raise NotImplementedError

@@ -1,4 +1,4 @@
-node=75
+node=76
 prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
 
 # trace generation 
@@ -10,7 +10,7 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/`
-    # for trace in FM-720-roberta-base
+    # for trace in FM-320-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-320-vit
@@ -23,7 +23,7 @@ do
             add_ckpt=30
             for multi_task_adaptivity in False True
             do 
-                for schedule in themis gavel # pollux titan  # titan optimus tiresias themis  optimus # titan pollux optimus tiresias themis gavel optimus # themis tiresias optimus  titan pollux
+                for schedule in themis # themis gavel # gavel # pollux titan  # titan optimus tiresias themis  optimus 
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300

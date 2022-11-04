@@ -105,7 +105,6 @@ class OptimusScheduler(BaseScheduler):
         runnable_jobs = self.running_jobs + self.pending_jobs
         if len(runnable_jobs) == 0:
             return 
-        runnable_jobs.sort(key=lambda job:job.predict_remaining_time(1))
 
         # init
         should_run_jobs = list() 
