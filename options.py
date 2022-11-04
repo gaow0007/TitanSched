@@ -6,7 +6,7 @@ class Options:
         parser = argparse.ArgumentParser(description='Benchmark Sched')
         parser.add_argument('--placement', default='random', choices=['random', 'consolidate', 'gandiva', 'local_search', 'consolidate_random', 'local_search_rev'], type=str, help='placement policy')
         parser.add_argument('--schedule', default='time-aware-with-lease', type=str, choices=['tiresias', 'gittins', 'gandiva', 'edf', 'srtf', 'tetri-sched', \
-                                                                                            'yarn-cs', 'themis', 'genie', 'optimus', 'sigma', 'titan', 'pollux', 'hpo_titan'], help='schedue policy')
+                                                                                            'yarn-cs', 'themis', 'genie', 'optimus', 'sigma', 'titan', 'pollux', 'hpo_titan', 'gavel'], help='schedue policy')
         parser.add_argument('--cluster_partition', default='all', type=str, help='cluster partition way')
         parser.add_argument('--profile', default=False, type=ast.literal_eval, help='whether profile')
         parser.add_argument('--profile_node_num', default=4, type=int, help='node num')

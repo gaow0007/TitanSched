@@ -10,10 +10,10 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/`
-    # for trace in FM-160-roberta-base
+    # for trace in FM-720-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
-    # for trace in FM-480-vit
+    # for trace in FM-320-vit
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -23,7 +23,7 @@ do
             add_ckpt=30
             for multi_task_adaptivity in False True
             do 
-                for schedule in titan pollux themis tiresias optimus srtf 
+                for schedule in themis gavel # pollux titan  # titan optimus tiresias themis  optimus # titan pollux optimus tiresias themis gavel optimus # themis tiresias optimus  titan pollux
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300
@@ -39,16 +39,24 @@ do
                     then 
                         temporal_transferability=True
                         transferability=True
-                        extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability" # 0.302186
+                        extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
                         ident="${schedule}_${trace}_${multi_task_adaptivity}_${transferability}"
                         save_log_dir=result/$schedule/$trace-${multi_task_adaptivity}-${transferability}
-                        scheduling_time_interval=300
+                        scheduling_time_interval=120
                     fi 
 
                     if [[ $schedule == "themis" ]] ;
                     then 
+                        scheduling_time_interval=60
                         # extra_cmd="--multi_task_adaptivity"
-                        extra_cmd=" --lease_term_interval=300"
+                        extra_cmd=" --lease_term_interval=600  "
+                    fi 
+
+                    if [[ $schedule == "gavel" ]] ;
+                    then 
+                        scheduling_time_interval=60
+                        # extra_cmd="--multi_task_adaptivity"
+                        extra_cmd=" --lease_term_interval=600 "
                     fi 
 
                     job_type="foundation_model"

@@ -245,7 +245,7 @@ class PolluxScheduler(BaseScheduler):
         problem = Problem(list(jobs.values()), list(nodes.values()), base_state)
                           #len(nodes) * [node_template], base_state)
         algorithm = NSGA2(
-            pop_size=10,
+            pop_size=50,
             # pymoo expects a flattened 2-D array.
             sampling=states.reshape(states.shape[0], -1),
             crossover=Crossover(),

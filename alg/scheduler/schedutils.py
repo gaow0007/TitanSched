@@ -30,6 +30,21 @@ def schedule_summary(sched):
         print(",".join(attribute_list), file=f)
         for full_resource, free_resource, pending_num, running_num, submit_num in zip(sched.full_resource_list, sched.free_resource_list, sched.pending_job_num_list, sched.running_job_num_list, sched.submit_job_num_list):
             print('{},{},{},{},{}'.format(full_resource, free_resource, pending_num, running_num, submit_num), file=f)
+    
+    attribute_list = ['name', 'finish_time_fairness']
+    with open(os.path.join(sched.save_dir, sched.name + '_fairness.csv'), 'w') as f: 
+        print(",".join(attribute_list), file=f)
+        for job in sched.job_manager.job_list: 
+            completion_time = job.completion_time - job.submission_time
+            total_time_running_exclusively = job.total_time_running_exclusively
+            avg_contention_factor = max(1, len(sched.job_manager.job_list) / sched.cluster_manager.check_total_gpus())
+            finish_time_fairness = round(
+                completion_time / (total_time_running_exclusively * avg_contention_factor),
+                5,
+            )
+            print('{},{}'.format(job.name, finish_time_fairness), file=f)
+            job.finish_time_fairness = finish_time_fairness
+
 
 
 def resource_summary(sched, ):

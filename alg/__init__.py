@@ -13,6 +13,7 @@ from .scheduler.themis import ThemisScheduler
 from .scheduler.titan import TitanScheduler 
 from .scheduler.optimus import OptimusScheduler
 from .scheduler.pollux import PolluxScheduler
+from .scheduler.gavel import GavelScheduler
 from .scheduler.hpo_titan import HPOTitanScheduler
 
 

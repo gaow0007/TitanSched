@@ -23,7 +23,7 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
             intermediate_jobs.append(job)
 
     for job in self.pending_jobs:
-        if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx'): 
+        if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx') and (job in runnable_jobs): 
             transfer_jobs.append(job)
             number_of_transfer_training += 1
     max_equalivent_allocation_idx = max([job.equalivent_allocation_idx for job in runnable_jobs]) + TRANSFER_MAX_ALLOCATION_IDX
@@ -59,7 +59,7 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
                 # if 'snli' in transfer_job.name: 
                 #     self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
                 # import pdb; pdb.set_trace() 
-                self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
+                # self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
                 if transfer_job.reweight < 1.1: continue  
                 fair_remaining_time = max(transfer_job.predict_remaining_time(min(fair_placement * transfer_job.job_number, transfer_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
@@ -102,10 +102,10 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
         return list(), list(), list(), list()
     
     for job in self.pending_jobs:
-        if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx'): 
+        if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx') and (job in runnable_jobs): 
             transfer_jobs.append(job)
             number_of_transfer_training += 1
-    max_equalivent_allocation_idx = max([job.equalivent_allocation_idx for job in runnable_jobs])
+    max_equalivent_allocation_idx = max([job.equalivent_allocation_idx for job in runnable_jobs]) + TEMPORAL_TRANSFER_MAX_ALLOCATION_IDX
     
 
     total_gpu_num = self.cluster_manager.check_total_gpus() 
@@ -130,20 +130,25 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
     temporal_transfer_equalivent_allocation_list = list() 
 
     temporal_transfer_job_list = list() 
+    cnt = 0 
     for idxA in range(number_of_transfer_training): 
         jobA = transfer_jobs[idxA]
         for idxB in range(number_of_transfer_training): 
             jobB = transfer_jobs[idxB]
             if jobA.application.task_name != jobB.application.task_name: 
                 temporal_transfer_job = TemporalTransferFoundationModelJob(jobA, jobB)
-                if 'snli' in temporal_transfer_job.name: 
-                    self.logger.info('temporal weight weight {}, job name {}'.format(temporal_transfer_job.reweight, temporal_transfer_job.name))
+                # if 'snli' in temporal_transfer_job.name: 
+                #     self.logger.info('temporal weight weight {}, job name {}'.format(temporal_transfer_job.reweight, temporal_transfer_job.name))
 
                 if temporal_transfer_job.reweight < 1.1: continue  
                 fair_remaining_time = max(temporal_transfer_job.predict_remaining_time(min(fair_placement * temporal_transfer_job.job_number, temporal_transfer_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
                 temporal_transfer_job_list.append(temporal_transfer_job)
                 forbidden_job_id_list = [jobA.equalivent_allocation_idx, jobB.equalivent_allocation_idx]
+                cnt += 1
+                # self.logger.info('cnt == {}, forbidden_job_id_list {}, jobA.name {}, jobB.name {}'.format(cnt, forbidden_job_id_list, jobA.name, jobB.name))
+                if len(candidate_allocations) == 0: 
+                    import pdb; pdb.set_trace() 
 
                 for allocations in candidate_allocations: 
                     if allocation2num(allocations) == 0: 

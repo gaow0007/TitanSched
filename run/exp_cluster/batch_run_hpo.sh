@@ -21,7 +21,7 @@ do
             num_node_p_switch=4
             num_gpu_p_node=4
             add_ckpt=30
-            for repeat in seq 1 2 
+            for repeat in {1..10}
             do 
                 for temporal_transferability in False # False # False  # True False 
                 do 
@@ -43,7 +43,7 @@ do
                                     --save_log_dir=${save_log_dir} --ident=$ident \
                                     --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                                     --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                                    --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd}  &
+                                    --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd}  # &
                     done
                 done 
             done

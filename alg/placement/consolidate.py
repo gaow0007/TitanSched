@@ -51,7 +51,7 @@ class ConsolidatePlaceMent(BasePlaceMent):
 
         if len(best_select_list) == 0:
             local_target_num_gpus = target_num_gpus
-            reverse = False if self.cluster_manager.switch.node_list[0].check_total_gpus() >= target_num_gpus else True
+            reverse = False if self.cluster_manager.switch_list[0].node_list[0].check_total_gpus() >= target_num_gpus else True
             switch_list = sorted(self.cluster_manager.switch_list, key=lambda e: e.check_free_gpus(), reverse=reverse)
             
             for switch in switch_list:

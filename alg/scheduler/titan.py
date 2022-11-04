@@ -197,7 +197,7 @@ class TitanScheduler(BaseScheduler):
                 "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
             }
         else: 
-            cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+            cluster_gpu_info = {"V100": self.cluster_manager.check_total_gpus()}
 
         candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
         
@@ -210,6 +210,8 @@ class TitanScheduler(BaseScheduler):
                         self.running_jobs.remove(job)
                     if job not in self.pending_jobs: 
                         self.pending_jobs.append(job)
+                if hasattr(job, 'equalivent_allocation_idx'):
+                    delattr(job, 'equalivent_allocation_idx')
             runnable_jobs = runnable_jobs[:total_gpu_num]
             
         if len(runnable_jobs) > 0: 
@@ -218,6 +220,7 @@ class TitanScheduler(BaseScheduler):
 
         for idx, job in enumerate(runnable_jobs):
             job.equalivent_allocation_idx = idx 
+            # self.logger.info('main set job name {} as {}'.format(job.name, job.equalivent_allocation_idx))
             fair_remaining_time = max(job.predict_remaining_time(min(fair_placement * job.job_number, job.max_num_gpus)), self.scheduling_time_interval)
             for allocations in candidate_allocations: 
                 if allocation2num(allocations) == 0: 
@@ -322,7 +325,7 @@ class TitanScheduler(BaseScheduler):
                                             equalivent_allocation_list, unique_job_num, cluster_gpu_info, \
                                             max_seconds=30, power=power)
 
-        self.logger.info('solution == {}'.format(solution))
+        
 
         should_run_jobs = list() 
         for idx, job in enumerate(runnable_jobs): 
@@ -351,7 +354,7 @@ class TitanScheduler(BaseScheduler):
                         self.pending_jobs.append(job)
                     
             elif job.status == JobState.PENDING: 
-                if solution[idx] is not None: 
+                if solution[idx] is not None and solution[idx] > 0: 
                     job.target_num_gpus = solution[idx] # 
                     should_run_jobs.append(job)
 
@@ -360,27 +363,28 @@ class TitanScheduler(BaseScheduler):
         
         if self.multi_task_adaptivity:
             for idx, mtask_job in enumerate(mtask_jobs): 
-                if solution[unique_job_num + idx] > 0:
+                solution[unique_job_num + idx] = allocation2num(solution[unique_job_num + idx])
+                if solution[unique_job_num + idx] is not None and solution[unique_job_num + idx] > 0: 
                     should_run_jobs.append(mtask_job)
                     mtask_job.target_num_gpus = solution[unique_job_num + idx]
 
             if self.transferability:  
                 for idx, transfer_job in enumerate(transfer_jobs): 
-                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
+                    solution[unique_job_num + mtask_unique_job_num + idx] = allocation2num(solution[unique_job_num + mtask_unique_job_num + idx])
+                    if solution[unique_job_num + mtask_unique_job_num + idx] is not None and solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
                         should_run_jobs.append(transfer_job)
                         transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
                         
             if self.temporal_transferability: 
                 for idx, temporal_transfer_job in enumerate(temporal_transfer_jobs): 
-                    if solution[unique_job_num + mtask_unique_job_num + idx] > 0: 
+                    solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx] = allocation2num(solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx])
+                    if solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx] is not None and solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx] > 0: 
                         should_run_jobs.append(temporal_transfer_job)
-                        temporal_transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + idx]
+                        temporal_transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx]
 
 
             
-                
-
-
+        self.logger.info('solution == {}'.format(solution))
         self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
         self.place_jobs(should_run_jobs, cur_time)
         

@@ -1,5 +1,19 @@
 import collections
-METHOD="FFT"
+from client.application.foundation_model import TaskScale
+
+METHOD="FAIR"
+
+def append(job, job_cluster): 
+    if job.application.name not in job_cluster: 
+        job_cluster[job.application.name] = [job]
+    else: 
+        job_cluster[job.application.name].append(job)
+
+def job_application_priority(jobA): 
+    return jobA.max_progress
+
+def application_priority(appA): 
+    return TaskScale[appA.split('@')[-1]] 
 
 def compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval): 
     if METHOD == "TIME":
@@ -58,5 +72,5 @@ def create_candidate_allocations(cluster_manager, cluster_gpu_info, heterogeneit
         total_gpu_num = cluster_manager.check_total_gpus()
         for num_gpus in [0, 1, 2, 3] + [4 * i for i in range(1, total_gpu_num//4+1)]: 
             placement = build_placement_from_num(num_gpus)
-            candidate_allocations.append(placement)
+            candidate_allocations.append({"V100":placement})
     return candidate_allocations

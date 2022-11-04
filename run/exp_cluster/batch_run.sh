@@ -1,5 +1,5 @@
 node=75
-prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=12 --ntasks=1 -w SG-IDC1-10-51-2-$node"
+prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
 
 # trace generation 
 # bash trace/all_trace_generation.sh
@@ -13,7 +13,7 @@ do
     # for trace in FM-720-vit-large
     # for trace in FM-480-vit
     # for trace in debug
-    for trace in FM-720-roberta-base # FM-480-roberta-base
+    for trace in FM-320-roberta-base # FM-480-roberta-base
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -21,9 +21,9 @@ do
             num_gpu_p_node=4
             scheduling_time_interval=300
             add_ckpt=30
-            for multi_task_adaptivity in True # False  # True False 
+            for multi_task_adaptivity in False True # False  # True False 
             do 
-                for schedule in  titan # ollux # titan # themis  tiresias optimus srtf  # tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
+                for schedule in optimus #  themis  tiresias optimus srtf # titan # themis  tiresias optimus srtf  # tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                 do 
                     extra_cmd=""
                     ident="${schedule}_${trace}"
@@ -58,7 +58,7 @@ do
                         job_type="batch_elastic"
                     fi 
 
-                    
+                    echo $job_type
                     $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                                 --save_log_dir=${save_log_dir} --ident=$ident \
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \

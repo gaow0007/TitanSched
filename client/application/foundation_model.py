@@ -210,7 +210,7 @@ class FoundationModelApplication(object):
         assert target_lr is not None and target_gradient_steps is not None
         performance_traj =  FMStats.hpo_info.performance_report[self.model_name][self.task_name][target_lr][target_gradient_steps]
         metric_info = performance_traj[self.metric_key]
-        epoch_info = performance_traj[self.metric_key + '_epoch']
+        epoch_info = [int(round(epoch)) for epoch in performance_traj[self.metric_key + '_epoch']]
         epoch_metric_list = sorted([(epoch, metric) for (epoch, metric) in zip(epoch_info, metric_info)])
         max_metric = 0
         for epoch, metric in epoch_metric_list: 

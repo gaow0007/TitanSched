@@ -10,7 +10,7 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     # for trace in `ls trace/`
-    for trace in FM-320-roberta-base
+    for trace in FM-480-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-480-vit
@@ -30,12 +30,12 @@ do
                 ident="heter_debug_${schedule}_${trace}"
                 save_log_dir=result/heter/$schedule/$trace/
                 mkdir -p $save_log_dir
-                multi_task_adaptivity=False
+                multi_task_adaptivity=True
                 
                 if [[ $schedule == "titan" ]] ;
                 then 
-                    temporal_transferability=False
-                    transferability=False
+                    temporal_transferability=True
+                    transferability=True
                     extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
                     scheduling_time_interval=300
                     heterogeneity=$heterogeneity

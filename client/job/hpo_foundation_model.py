@@ -27,12 +27,15 @@ class HPOFoundationModelJob(BaseJob):
         self.add_ckpt = kwargs.get('add_ckpt', 0)
         self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
+
         self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
         self.training_epochs = self.application.max_epochs
         self.target_batch_size = int(df.target_batch_size)
         self.target_lr = df.target_lr 
         self.target_gradient_steps = df.target_gradient_steps
         self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
+        self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
+
         
         self.atomic_bsz = 0 
         self.accum_steps = 0
@@ -62,7 +65,7 @@ class HPOFoundationModelJob(BaseJob):
             placement = tuple(placement)
             assert sum(placement) == num_gpus
         elif isinstance(placement, collections.Iterable): 
-            placcement = tuple([p for p in placement])
+            placement = tuple([p for p in placement])
         else: 
             raise NotImplementedError
         
@@ -78,6 +81,13 @@ class HPOFoundationModelJob(BaseJob):
         return self.get_actual_loss_value(predict_progress)
 
     def predict_remaining_time(self, placement): 
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict): 
+            merge_placement = ()
+            for item in placement.values(): 
+                merge_placement += item 
+            placement = merge_placement
+
         if isinstance(placement, int): 
             num_gpus = placement
             placement = [4 for _ in range(num_gpus // 4)]
@@ -85,7 +95,7 @@ class HPOFoundationModelJob(BaseJob):
             placement = tuple(placement)
             assert sum(placement) == num_gpus
         elif isinstance(placement, collections.Iterable): 
-            placcement = tuple([p for p in placement])
+            placement = tuple([p for p in placement])
         else: 
             # print(placement, type(placement))
             raise NotImplementedError
@@ -104,6 +114,13 @@ class HPOFoundationModelJob(BaseJob):
 
 
     def update_local_bsz(self, placement):
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict): 
+            merge_placement = ()
+            for item in placement.values(): 
+                merge_placement += item 
+            placement = merge_placement
+
         app = self.application
         placement = tuple(filter(None, placement))
         num_nodes, num_replicas = len(placement), sum(placement)
@@ -132,7 +149,14 @@ class HPOFoundationModelJob(BaseJob):
                 self.status = JobState.PENDING
                 self.pending_time += seconds 
             return
-            
+
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(self.placement, dict): 
+            merge_placement = ()
+            for item in self.placement.values(): 
+                merge_placement += item 
+            self.placement = merge_placement
+
         if self.physical and np.random.rand() > 1 - self.failure_ratio: 
             self.staying_time += seconds 
             self.running_time += seconds

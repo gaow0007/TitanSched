@@ -16,6 +16,7 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
         if job.progress == 0 and job.__alias__ == 'foundation_model' and hasattr(job, 'equalivent_allocation_idx'): 
             mtask_jobs.append(job)
             number_of_mtask_training += 1
+
     max_equalivent_allocation_idx = max([job.equalivent_allocation_idx for job in runnable_jobs])
     
 
@@ -51,7 +52,7 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
                 mtask_job = MtaskFoundationModelJob(jobA, jobB)
                 # if 'snli' in mtask_job.name: 
                 if mtask_job.reweight < 1.1: continue  
-                self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))
+                # self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))
                 fair_remaining_time = max(mtask_job.predict_remaining_time(min(fair_placement * mtask_job.job_number, mtask_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
                 mtask_job_list.append(mtask_job)
@@ -66,8 +67,7 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
                         continue 
                     
                     if allocation2num(allocations) > job.max_num_gpus: continue 
-                    placement = () 
-                    weight = compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
+                    weight = compute_weight_metric(METHOD, job, allocations, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
 
                     if np.isinf(weight) or np.isnan(weight): 
                         mtask_required_resource_list.append(allocations)

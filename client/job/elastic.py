@@ -148,7 +148,7 @@ class BatchElasticJob(BaseJob):
         
         self.add_ckpt = kwargs.get('add_ckpt', 0)
         self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
-
+        
         # statistical information
         if hasattr(df, 'target_metric'): 
             self.target_gradient_steps = df.target_gradient_steps
@@ -163,6 +163,8 @@ class BatchElasticJob(BaseJob):
             self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
             self.training_epochs = self.application.max_epochs
         self.target_batch_size = int(df.target_batch_size)
+        self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
+        
         self.max_num_gpus = 32
         self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
         
@@ -171,6 +173,48 @@ class BatchElasticJob(BaseJob):
 
         self.physical = kwargs.get('physical', 'False')
         self.failure_ratio = kwargs.get('failure_ratio', 0.05)
+
+
+    def predict_remaining_time(self, placement): 
+        GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict): 
+            merge_placement = ()
+            for item in placement.values(): 
+                merge_placement += item 
+            placement = merge_placement
+
+        if isinstance(placement, dict) and len(placement) == 1: 
+            GPU_KIND = list(placement.keys())[0]
+            placement = list(placement.values())[0]
+
+        if isinstance(placement, int): 
+            num_gpus = placement
+            placement = [4 for _ in range(num_gpus // 4)]
+            if num_gpus % 4: placement.append(num_gpus % 4)
+            placement = tuple(placement)
+            assert sum(placement) == num_gpus
+
+        elif isinstance(placement, dict): 
+            return self.heter_predict_remaining_time(placement)
+
+        elif isinstance(placement, collections.Iterable): 
+            placement = tuple([p for p in placement])
+        else: 
+            # print(placement, type(placement))
+            raise NotImplementedError
+        
+        self.update_local_bsz(placement)
+        if hasattr(self, 'topolocy') and self.topology is not None: 
+            import pdb; pdb.set_trace() 
+        else: 
+            step_time, sync_time = self.application.get_throughput(GPU_KIND, placement, self.atomic_bsz)
+        
+        accum_time = step_time - sync_time
+        total_time = step_time + accum_time * (self.accum_steps + 1)
+        total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
+        delta_progress = self.max_progress - self.progress
+        delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
+        return delta_seconds
 
 
     @property

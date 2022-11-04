@@ -8,6 +8,7 @@ from .base import BaseJob
 from .state import JobState
 import copy
 
+HETER_DEBUG=False
 DEFAULT_GPU_KIND="V100"
 
 class FoundationModelJob(BaseJob): 
@@ -26,6 +27,8 @@ class FoundationModelJob(BaseJob):
         self.add_ckpt = kwargs.get('add_ckpt', 0)
         self.rescale_time = self.add_ckpt + self.application.get_context_switch_overhead(GPU_KIND=DEFAULT_GPU_KIND, placement=1, pipeline=False)
 
+        
+
         # statistical information
         if hasattr(df, 'target_metric'): 
             self.target_gradient_steps = df.target_gradient_steps
@@ -40,6 +43,8 @@ class FoundationModelJob(BaseJob):
             self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
             self.training_epochs = self.application.max_epochs
         self.target_batch_size = int(df.target_batch_size)
+        self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
+        
         self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
         
         self.atomic_bsz = 0 
@@ -99,9 +104,6 @@ class FoundationModelJob(BaseJob):
             sync_time = max(single_sync_time, sync_time)
             total_batch_size += sum(single_placement) * self.atomic_bsz[GPU_KIND] * (self.accum_steps + 1)
 
-        # if sum(merge_placement) >= 8: 
-        #     import pdb; pdb.set_trace() 
-        # accum_time = step_time - sync_time
         total_time = sync_time + accum_time * (self.accum_steps + 1)
         delta_progress = self.max_progress - self.progress
         delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
@@ -110,6 +112,12 @@ class FoundationModelJob(BaseJob):
 
     def predict_remaining_time(self, placement): 
         GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict) and HETER_DEBUG: 
+            merge_placement = ()
+            for item in placement.values(): 
+                merge_placement += item 
+            placement = merge_placement
+
         if isinstance(placement, dict) and len(placement) == 1: 
             GPU_KIND = list(placement.keys())[0]
             placement = list(placement.values())[0]
@@ -195,7 +203,14 @@ class FoundationModelJob(BaseJob):
 
 
     def update_local_bsz(self, placement):
+        # print('placement == {}'.format(placement))
         GPU_KIND = DEFAULT_GPU_KIND
+        if isinstance(placement, dict) and HETER_DEBUG: 
+            merge_placement = ()
+            for item in placement.values(): 
+                merge_placement += item 
+            placement = merge_placement
+
         if isinstance(placement, dict) and len(placement) == 1: 
             GPU_KIND = list(placement.keys())[0]
             placement = list(placement.values())[0]
@@ -210,6 +225,8 @@ class FoundationModelJob(BaseJob):
         app = self.application
         placement = tuple(filter(None, placement))
         num_nodes, num_replicas = len(placement), sum(placement)
+        if num_replicas == 0: 
+            import pdb; pdb.set_trace() 
         batch_size = self.target_batch_size 
         local_bsz = math.ceil(batch_size / num_replicas - 1e-8)
         self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
@@ -250,6 +267,10 @@ class FoundationModelJob(BaseJob):
             
             # accum_time = step_time - sync_time
             total_time = sync_time + accum_time * (self.accum_steps + 1)
+            if HETER_DEBUG: 
+                single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+                single_total_time = single_sync_time + (single_step_time - single_sync_time) * (self.accum_steps + 1)
+                total_time = single_total_time
 
             delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
             delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 

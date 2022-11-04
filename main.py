@@ -12,7 +12,7 @@ import options
 import copy, glob
 from alg import (PlaceMentFactory, YarnCSScheduler, TiresiasScheduler, \
                 GandivaScheduler, ThemisScheduler, ShortestRemainingTimeFirstScheduler, \
-                TetriSchedScheduler, SigmaScheduler, GenieScheduler, OptimusScheduler, PolluxScheduler)
+                TetriSchedScheduler, SigmaScheduler, GenieScheduler, OptimusScheduler, PolluxScheduler, GavelScheduler)
 
 from server import cluster, meta
 from client.job import (JobFactory, BaseJob, ResourceElasticJob, BatchElasticJob, HeterogeneousJob, FoundationModelJob, PreemptJob)
@@ -145,10 +145,14 @@ def summary_all_jobs(job_manager):
     jct = 0
     min_time = sys.maxsize
     max_time = 0
+    unfair_jobs = 0
     for job in job_manager.job_list:
         jct += (job.completion_time - job.submission_time) / num_job
         min_time = min(job.submission_time, min_time)
         max_time = max(job.completion_time, max_time)
+        if job.finish_time_fairness > 1: 
+            unfair_jobs += 1
+
     preempt = 0
     for job in job_manager.job_list: 
         preempt += job.num_restarts
@@ -156,6 +160,8 @@ def summary_all_jobs(job_manager):
     logger.info('average jct of scheduler %s is %d, %02f (hour)'%(opt.schedule,  jct, jct / 3600))
     logger.info('makespan of scheduler %s is %d, %02f (hour)'%(opt.schedule,  max_time - min_time, (max_time - min_time) / 3600))
     logger.info('total num_restarts of scheduler %s is %d'%(opt.schedule,  preempt))
+    logger.info('unfair fraction of scheduler %s is %02f'%(opt.schedule,  unfair_jobs / num_job ))
+
     if len(job_manager.job_list) > 0: 
         job_template = job_manager.job_list[0]
         if hasattr(job_template, 'ddl_time_list'): 
@@ -216,6 +222,10 @@ def main(opt, logger):
                                         solve_starvation=0, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir)
     elif opt.schedule == 'themis':
         scheduler = ThemisScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
+                                        logger=logger, scheduling_time_interval=opt.scheduling_time_interval, 
+                                        lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
+    elif opt.schedule == 'gavel':
+        scheduler = GavelScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, scheduling_time_interval=opt.scheduling_time_interval, 
                                         lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
     elif opt.schedule == 'tetri-sched': 

@@ -9,8 +9,8 @@ do
     # match="FM-"
     match="FM-"
     # for trace in `{ls $root/FM-* `
-    # for trace in `ls trace/`
-    for trace in FM-320-roberta-base
+    for trace in `ls trace/`
+    # for trace in FM-320-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-480-vit
@@ -22,20 +22,20 @@ do
             
             add_ckpt=30
             
-            for heterogeneity in True # False True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
+            for heterogeneity in True False # False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
             do 
                 schedule=titan
                 extra_cmd=""
                 scheduling_time_interval=300
                 ident="heter_${heterogeneity}_${schedule}_${trace}"
-                save_log_dir=result/heter/$schedule/$trace/
+                save_log_dir=result/heter/$heterogeneity/$trace/
                 mkdir -p $save_log_dir
-                multi_task_adaptivity=False
+                multi_task_adaptivity=True
                 
                 if [[ $schedule == "titan" ]] ;
                 then 
-                    temporal_transferability=False
-                    transferability=False
+                    temporal_transferability=True
+                    transferability=True
                     extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
                     scheduling_time_interval=300
                     heterogeneity=$heterogeneity
@@ -60,7 +60,7 @@ do
                             --heter=True --heter_gpus V100 A100 \
                             --heterogeneity=$heterogeneity \
                             --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} # &
+                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} &
             done 
 
         fi
