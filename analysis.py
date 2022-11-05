@@ -63,7 +63,7 @@ def get_cdf(data):
 
 
 
-model_list = ['roberta-base', 'roberta-large', 'vit', 'vit-large']
+model_list = ['vit', 'roberta-base'] # ['roberta-base'] # , 'roberta-large'] # , 'vit', 'vit-large']
 for model_idx, model in enumerate(model_list): 
     filename = 'trace/main/FM-320-{}/workload-0.csv'.format(model)
     job_type = 'foundation_model'

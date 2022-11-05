@@ -237,6 +237,7 @@ FOUNDATIONMODELAPPLICATIONS = {
     "roberta-base@qqp": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@qqp"), scale="large"), 
     "roberta-base@mnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@mnli"), scale="large"), 
     "roberta-base@snli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-base@snli"), scale="large"), 
+    # ////////////////////////// -- model split
     "roberta-large@wnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@wnli"), scale="small"), 
     "roberta-large@rte": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@rte"), scale="small"), 
     "roberta-large@mrpc": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@mrpc"), scale="small"), 
@@ -254,8 +255,9 @@ FOUNDATIONMODELAPPLICATIONS = {
     "vit@mnist": FoundationModelApplication(os.path.join(STATS_DIR, "vit@mnist"), scale="medium"), 
     "vit@food101": FoundationModelApplication(os.path.join(STATS_DIR, "vit@food101"), scale="large"), 
     "vit@imagenet-split-0": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-0"), scale="medium"), 
-    "vit@imagenet-split-1": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-1"), scale="large"), 
+    "vit@imagenet-split-1": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-1"), scale="medium"), 
     "vit@imagenet-split-2": FoundationModelApplication(os.path.join(STATS_DIR, "vit@imagenet-split-2"), scale="large"), 
+    # ////////////////////////// -- model split
     "vit-large@Bingsu#Cat_and_Dog": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@Bingsu#Cat_and_Dog"), scale="small"), 
     "vit-large@frgfm#imagenette": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@frgfm#imagenette"), scale="small"), 
     "vit-large@cifar100": FoundationModelApplication(os.path.join(STATS_DIR, "vit-large@cifar100"), scale="medium"), 

@@ -189,10 +189,10 @@ def main(model, APPLICATIONS):
         sample = sample.loc[sample.gpu_time < 100 * 3600]
         if True:
             sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
-            sample = sample.loc[sample.submission_time < 16 * 3600]
-            sample = sample.loc[sample.submission_time > 8 * 3600]
-            sample.submission_time = sample.submission_time.apply(lambda st : st - (8 * 60 * 60))
-            # print(len(sample))
+            # sample = sample.loc[sample.submission_time < 16 * 3600]
+            # sample = sample.loc[sample.submission_time > 8 * 3600]
+            # sample.submission_time = sample.submission_time.apply(lambda st : st - (8 * 60 * 60))
+            sample = sample.loc[sample.submission_time < 12 * 3600]
         else:
             # day = 264
             # left = day * 24 * 3600

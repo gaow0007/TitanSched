@@ -312,6 +312,7 @@ class FoundationModelJob(BaseJob):
             else: 
                 self.placement = list(self.placement.values())[0]
 
+        self.attained_service += delay * sum(self.placement)
 
         if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
@@ -459,6 +460,7 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
             return 
             
         delay = min(self.rescale_time, seconds)
+        self.attained_service += delay * sum(placement)
         self.rescale_time -= delay 
         seconds -= delay 
         self.staying_time += delay
