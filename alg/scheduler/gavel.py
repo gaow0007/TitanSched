@@ -79,12 +79,23 @@ class GavelScheduler(BaseScheduler):
         self.logger.info('---- job[{}] is added  at time[{}]'.format(start_job.name, cur_time))
     
     def check_lease_expire(self, job, cur_time): 
+        # return  (cur_time - job.last_running_time) * job.target_num_gpus >= self.lease_term_interval
         return  (cur_time - job.last_running_time) >= self.lease_term_interval
 
+    # def get_finish_time_fairness(self, job):
+    #     total_job_num = len(self.running_jobs) + len(self.pending_jobs)
+    #     weighted_share = self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3)
+    #     deserved_service = min(weighted_share, job.target_num_gpus) * (self.lease_term_interval / job.target_num_gpus )
+    #     attained_service = self.lease_term_interval
+    #     return (job.attained_service + attained_service) / (job.deserved_service + deserved_service)
+
     def get_finish_time_fairness(self, job):
-        if job.deserved_service == 0: 
-            return 1 
-        return job.attained_service / job.deserved_service
+        total_job_num = len(self.running_jobs) + len(self.pending_jobs)
+        weighted_share = self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3)
+        fair_placement = int(max(min(weighted_share, job.target_num_gpus), 1))
+        t_share = max(job.predict_remaining_time(job.target_num_gpus), 1e-3)
+        t_equal= max(job.predict_remaining_time(fair_placement), 1e-3)
+        return t_share / t_equal  # accelerate 
 
 
     def update_job_fairness(self, prev_time, cur_time): 
@@ -126,7 +137,6 @@ class GavelScheduler(BaseScheduler):
                 job.finish_time_fairness = self.get_finish_time_fairness(job)
                 self.completion_jobs.append(job)
                 need_remove_jobs.append(job)
-                self.completion_jobs.append(job)
     
         for job in need_remove_jobs:
             self.running_jobs.remove(job)
@@ -151,7 +161,6 @@ class GavelScheduler(BaseScheduler):
                 total_resource_count += job.target_num_gpus 
         
         self.runnable_jobs.sort(key=lambda e: -e.finish_time_fairness)
-        
         # 2. select which jobs to run or preempty
         
         should_run_jobs, should_preempt_jobs = list(), list()
@@ -162,6 +171,7 @@ class GavelScheduler(BaseScheduler):
                 if job.status == JobState.PENDING:
                     should_run_jobs.append(job)
                 elif job.status == JobState.RUNNING: 
+                    # job.last_running_time = job.last_running_time + int(self.lease_term_interval / job.target_num_gpus)
                     job.last_running_time = job.last_running_time + self.lease_term_interval
                     pass
                 else: 
@@ -188,6 +198,7 @@ class GavelScheduler(BaseScheduler):
                 job.last_running_time = cur_time 
 
         self.runnable_jobs = list()
+        self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
 
 
 

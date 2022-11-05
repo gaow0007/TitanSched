@@ -24,6 +24,7 @@ class ThemisScheduler(BaseScheduler):
         self.scheduling_time_interval = kwargs.get('scheduling_time_interval', 10)
         self.lease_term_interval = kwargs.get('lease_term_interval', 300)
         self.save_dir = kwargs.get('save_dir', 'result/')
+        self.fraction = 0.8
     
 
     def finish_all_jobs(self, ):
@@ -84,15 +85,33 @@ class ThemisScheduler(BaseScheduler):
     def get_finish_time_fairness(self, job):
         if job.deserved_service == 0: 
             return 1 
-        t_remaining = job.predict_remaining_time(job.target_num_gpus)
-        t_isolated = job.running_time * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
-        return job.staying_time / (t_isolated + t_remaining)
+        # x = self.cluster_manager.check_total_gpus() / (len(self.running_jobs) + len(self.pending_jobs))
+        # x = x / job.target_num_gpus 
+        # per_row_sum = max(x, 1)
+        # x_isolated = x / per_row_sum
+
+        # largest_progress = job.application.max_epochs * job.application.progress_per_epoch
+        # time_ratio = (largest_progress - job.progress) / (job.max_progress - job.progress)
+        if True: 
+            total_job_num = len(self.running_jobs) + len(self.running_jobs)
+            weighted_share = max(1, int(min(self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3), job.target_num_gpus)))
+            t_remaining_isolated = job.predict_remaining_time(weighted_share)
+            # t_isolated = job.running_time * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
+            t_isolated = job.running_time * (job.deserved_service / (job.attained_service + 1e-3)) + (job.staying_time - job.running_time)
+            expected_time_isolated = t_isolated + t_remaining_isolated
+            expected_remaining_shared = job.staying_time + job.predict_remaining_time(job.target_num_gpus) * (job.attained_service / (job.deserved_service + 1e-3))
+            return expected_remaining_shared / expected_time_isolated
+        else: 
+            t_remaining = job.predict_remaining_time(job.target_num_gpus)
+            t_isolated = job.running_time * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
+            return job.staying_time / (t_isolated + t_remaining)
 
 
     def update_job_fairness(self, prev_time, cur_time): 
         total_job_num = len(self.pending_jobs) + len(self.running_jobs)
-        # total_gpu_request = sum([job.target_num_gpus for job in (self.pending_jobs + self.running_jobs)])
-        total_gpu_request = len(self.pending_jobs) + len(self.running_jobs)
+        total_gpu_request = sum([job.target_num_gpus for job in (self.pending_jobs + self.running_jobs)])
+        # total_gpu_request = len(self.pending_jobs) + len(self.running_jobs)
+        # weighted_share = self.cluster_manager.check_total_gpus() / (total_gpu_request + 1e-3)
         weighted_share = self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3)
         for job in self.pending_jobs + self.running_jobs: 
             interval = cur_time - max(prev_time, job.submission_time)
@@ -100,6 +119,9 @@ class ThemisScheduler(BaseScheduler):
                 job.deserved_service = 0 
 
             job.deserved_service += min(weighted_share, job.target_num_gpus) * interval 
+            # job.deserved_service += min(weighted_share * job.target_num_gpus, job.target_num_gpus) * interval 
+            # job.deserved_service += weighted_share * job.target_num_gpus * interval 
+            # job.deserved_service += max(min(weighted_share, job.target_num_gpus), 0) * interval 
 
 
     def flush_event_jobs(self, prev_time, cur_time):
@@ -129,7 +151,6 @@ class ThemisScheduler(BaseScheduler):
                 job.finish_time_fairness = self.get_finish_time_fairness(job)
                 self.completion_jobs.append(job)
                 need_remove_jobs.append(job)
-                self.completion_jobs.append(job)
     
         for job in need_remove_jobs:
             self.running_jobs.remove(job)
@@ -153,14 +174,14 @@ class ThemisScheduler(BaseScheduler):
                 total_resource_count += job.target_num_gpus 
         
         self.runnable_jobs.sort(key=lambda e: e.finish_time_fairness ** (-1))
+        filter_length = int(round(len(self.runnable_jobs) * self.fraction))
+        self.runnable_jobs = self.runnable_jobs[:filter_length]
         
         # 2. select which jobs to run or preempty
         
         should_run_jobs, should_preempt_jobs = list(), list()
 
         for job in self.runnable_jobs:
-            # if job.finish_time_fairness < 0.9: 
-            #     continue 
             if job.target_num_gpus <= total_resource_count:
                 total_resource_count -= job.target_num_gpus
                 if job.status == JobState.PENDING:
@@ -192,6 +213,7 @@ class ThemisScheduler(BaseScheduler):
                 job.last_running_time = cur_time 
 
         self.runnable_jobs = list()
+        self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
 
 
 

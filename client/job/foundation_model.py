@@ -41,6 +41,7 @@ class FoundationModelJob(BaseJob):
         else: 
             self.max_progress = self.application.progress_per_epoch * self.application.max_epochs
             self.training_epochs = self.application.max_epochs
+            
         self.target_batch_size = int(df.target_batch_size)
         self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
         

@@ -30,8 +30,15 @@ def compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining
         predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
         weight = 1.0 * fair_remaining_time / predict_remaing_time 
     elif METHOD == "FFT": 
-        predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
-        weight = 1.0 * (predict_remaing_time + cur_time - job.submission_time) / (fair_remaining_time + cur_time - job.submission_time)
+        if hasattr(job, 'deserved_service') and job.deserved_service > 0:
+            t_remaining = job.predict_remaining_time(placement)
+            t_isolated = job.running_time * (job.attained_service / job.deserved_service) + (job.staying_time - job.running_time)
+            weight = (job.staying_time) / (t_isolated + t_remaining)
+        else: 
+            predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
+            weight = 1.0 * fair_remaining_time / predict_remaing_time 
+        # predict_remaing_time = max(job.predict_remaining_time(placement), scheduling_time_interval)
+        # weight = 1.0 * (predict_remaing_time + cur_time - job.submission_time) / (fair_remaining_time + cur_time - job.submission_time)
     return weight
 
 

@@ -166,10 +166,10 @@ def full_main():
         sample.set_index("name").to_csv('{}/{}.csv'.format(args.save_root, trace_name))
 
 
-def main(model, APPLICATIONS): 
+def main(model, APPLICATIONS, DATA_NUMBER): 
     # mlaas_trace = parse_mlass('full_trace/MLaaS.csv')
     # philly_trace = parse_philly('full_trace/Philly.csv')
-    helios_trace = parse_helios('trace/full_trace/Helios.csv')
+    # helios_trace = parse_helios('full_trace/Helios.csv')
     bm_trace = parse_BM('trace/full_trace/BM.csv')
     rng = random.Random(seed)
     rng2 = random.Random(seed + 3)
@@ -178,7 +178,6 @@ def main(model, APPLICATIONS):
     from client.application.foundation_model import FMStats
 
     for trace_name, trace in [('BM', bm_trace)]: 
-    # for trace_name, trace in [('Helios', helios_trace)]: 
         sample = trace.loc[(trace.duration >= args.min_time) & (trace.duration < args.max_time)]
         sample.insert(1, 'gpu_time', sample.num_gpus * sample.duration, True)
         if hasattr(args, 'gpu_limit') and args.gpu_limit > 0: 
@@ -187,29 +186,9 @@ def main(model, APPLICATIONS):
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, GPU_LIMIT))
         
         sample = sample.loc[sample.gpu_time < 100 * 3600]
-        if True:
-            sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
-            sample = sample.loc[sample.submission_time < 16 * 3600]
-            sample = sample.loc[sample.submission_time > 8 * 3600]
-            sample.submission_time = sample.submission_time.apply(lambda st : st - (8 * 60 * 60))
-            # print(len(sample))
-        else:
-            # day = 264
-            # left = day * 24 * 3600
-            # right = left + 5 * 24 * 3600
-            # sample = sample.loc[sample.submission_time < right]
-            # sample = sample.loc[sample.submission_time > left]
-            # sample.submission_time = sample.submission_time.apply(lambda st : st % (8 * 60 * 60))
-
-            for i in range(365): 
-                left = i * 24 * 3600 + 8 * 3600
-                sample = sample.loc[sample.submission_time > left]
-                new_sample = sample.loc[sample.submission_time < left + 8 * 3600]
-                if len(new_sample) > 0:
-                    print('day {}, sample length {}'.format(i, len(new_sample)))
-            import pdb; pdb.set_trace() 
-            sample = sample.loc[sample.submission_time < 8 * 3600]
-        
+        sample.submission_time = sample.submission_time.apply(lambda st : st % (8 * 60 * 60))
+        # sample = sample.loc[sample.submission_time < 8 * 3600]
+        # import pdb; pdb.set_trace() 
         if args.num_jobs > 0: 
             sample = sample.sample(n=args.num_jobs, random_state=rng.randint(0, 1 << 32))
         for key in ['submission_time', 'num_gpus', 'duration']: 
@@ -220,9 +199,31 @@ def main(model, APPLICATIONS):
         small_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'small']
         medium_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'medium']
         large_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'large']
-        xlarge_list = [APPLICATIONS[app].name for app in application_list if APPLICATIONS[app].scale == 'xlarge']
-        if len(xlarge_list) == 0: 
-            xlarge_list = large_list
+        total_data_number = len(small_list) + len(medium_list) + len(large_list)
+        reduction_factor = (1.0 * DATA_NUMBER / total_data_number)
+        ori_scale_list = [len(small_list), len(medium_list), len(large_list)]
+        scale_list = [len(small_list), len(medium_list), len(large_list)]
+        
+        for scale_idx, scale in enumerate(scale_list): 
+            scale_list[scale_idx] = int(scale * reduction_factor)
+        while sum(scale_list) != DATA_NUMBER: 
+            print(scale_list, ori_scale_list, DATA_NUMBER, model)
+            if sum(scale_list) < DATA_NUMBER: 
+                for i in range(3): 
+                    if scale_list[i] + 1 <= ori_scale_list[i]: 
+                        scale_list[i] += 1
+                        break 
+            elif sum(scale_list) > DATA_NUMBER: 
+                for i in range(3): 
+                    if scale_list[i] - 1 > 0: 
+                        scale_list[i] -= 1
+                        break 
+            print('run here')
+        small_list = small_list[-scale_list[0]:]
+        medium_list = medium_list[-scale_list[1]:]
+        large_list = large_list[-scale_list[2]:]
+        print(small_list, medium_list, large_list)
+        
 
         for row in sample.itertuples(): 
             rec = {"submission_time": row.submission_time}
@@ -231,15 +232,15 @@ def main(model, APPLICATIONS):
             rec['application'] = application_list[0]
             if row.gpu_time <= 1 * 3600:
                 rec["application"] =  rng.choice(small_list)
-            elif row.gpu_time <= 5 * 3600:
+            elif row.gpu_time <= 10 * 3600:
                 rec["application"] = rng.choice(medium_list)
             else: # row.gpu_time < 100 * 3600:
                 rec["application"] = rng.choice(large_list)
                 subset = sample[sample.duration <= 24 * 3600]
-                subset = subset[subset.gpu_time >= 5 * 3600]
-                subset = subset[subset.gpu_time < 10 * 3600]
+                subset = subset[subset.gpu_time >= 10 * 3600]
+                subset = subset[subset.gpu_time < 100 * 3600]
                 num_gpus = rng3.choice(subset.num_gpus.to_list())
-                
+             
             if args.add_metric: 
                 model, dataet = rec["application"].split('@')
                 metric, lr, gradient_steps = FMStats.hpo_info.query_best_hpo(model, dataet, last_epoch=False)
@@ -313,6 +314,7 @@ parser.add_argument('--seed', default=-1, type=int, help='seed')
 parser.add_argument('--repeat_number', default=1, type=int, help='the number of repeat experiments')
 parser.add_argument('--full_trace', default=False, type=ast.literal_eval, help='whether extract all trace')
 parser.add_argument('--add_metric', default=False, type=ast.literal_eval, help='whether extract all trace')
+parser.add_argument('--data_number', default=-1, type=int, help='data number')
 args = parser.parse_args()
 
 
@@ -344,7 +346,7 @@ if __name__ == '__main__':
                     APPLICATIONS[task] = FOUNDATIONMODELAPPLICATIONS[task]
             for repeat_id in range(args.repeat_number): 
 
-                workload = main(model_name, APPLICATIONS)
+                workload = main(model_name, APPLICATIONS, args.data_number)
                 csv = workload.set_index("name").to_csv(os.path.join(args.save_root, 'workload-{}.csv'.format(repeat_id)))
                 print(workload.groupby(["application", "num_gpus", "target_batch_size"])
                     .size().reset_index(name="count"))

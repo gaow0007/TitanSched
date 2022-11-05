@@ -40,6 +40,19 @@ class TitanScheduler(BaseScheduler):
         #         if job not in tot_jobs: 
         #             import pdb; pdb.set_trace() 
 
+    def update_job_fairness(self, prev_time, cur_time): 
+        total_job_num = len(self.pending_jobs) + len(self.running_jobs)        # total_gpu_request = len(self.pending_jobs) + len(self.running_jobs)
+        # weighted_share = self.cluster_manager.check_total_gpus() / (total_gpu_request + 1e-3)
+        weighted_share = self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3)
+        for job in self.pending_jobs + self.running_jobs: 
+            interval = cur_time - max(prev_time, job.submission_time)
+            if not hasattr(job, 'deserved_service'): 
+                job.deserved_service = 0 
+
+            # job.deserved_service += min(weighted_share, job.target_num_gpus) * interval 
+            # job.deserved_service += min(weighted_share * job.target_num_gpus, job.target_num_gpus) * interval 
+            # job.deserved_service += weighted_share * job.target_num_gpus * interval 
+            job.deserved_service += max(weighted_share, 1) * interval 
 
     def finish_all_jobs(self, ): 
         return len(self.event_jobs) + len(self.pending_jobs) + len(self.running_jobs) == 0
@@ -464,6 +477,7 @@ class TitanScheduler(BaseScheduler):
             self.flush_jobs(prev_time, cur_time, status=JobState.RUNNING)
             self.flush_jobs(prev_time, cur_time, status=JobState.EVENT)
             self.flush_jobs(prev_time, cur_time, status=JobState.PENDING)
+            self.update_job_fairness(prev_time, cur_time)
             self.flush_jobs(prev_time, cur_time, status=JobState.RUNNABLE)
             cur_time += self.scheduling_time_interval
             self.debug_cluster(cur_time)

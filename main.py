@@ -216,7 +216,7 @@ def main(opt, logger):
                                         lease_term_interval=opt.lease_term_interval,save_dir=opt.save_log_dir)
     elif opt.schedule == 'tiresias':
         num_queue = opt.num_queue
-        queue_limit = [3600, 1000 * 3600]
+        queue_limit = [3600 * 4, 1000 * 3600]
         scheduler = TiresiasScheduler(job_manager=job_manager, cluster_manager=cluster_manager, user_manager=user_manager, placement=PM, name=opt.schedule, \
                                         logger=logger, num_queue=num_queue, queue_limit=queue_limit, \
                                         solve_starvation=0, scheduling_time_interval = opt.scheduling_time_interval, save_dir=opt.save_log_dir)

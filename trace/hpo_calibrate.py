@@ -11,7 +11,7 @@ sys.path.insert(0, './')
 from client.application.foundation_model import TaskScale
 from client.application.foundation_model import FOUNDATIONMODELAPPLICATIONS 
 seed=42
-
+GPU_LIMIT=16
 def time_check(time_info): 
     return time_info >= args.min_time and time_info <= args.max_time # 10 * 3600 * 1
 
@@ -265,6 +265,8 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
+    if args.seed < 0: 
+        args.seed = seed
     if args.full_trace: 
         if not os.path.exists(args.save_root): 
             os.makedirs(args.save_root) 
@@ -285,7 +287,7 @@ if __name__ == '__main__':
         for model_name in [args.model]: # , 'vit', 'vit-large']: 
             APPLICATIONS = {} 
             for task in FOUNDATIONMODELAPPLICATIONS.keys(): 
-                if model_name in task: 
+                if (model_name + '@') in task: 
                     APPLICATIONS[task] = FOUNDATIONMODELAPPLICATIONS[task]
             repeat_pairs = list() 
             for taskA in APPLICATIONS.keys(): 

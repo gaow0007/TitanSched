@@ -245,7 +245,7 @@ FOUNDATIONMODELAPPLICATIONS = {
     "roberta-large@qnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@qnli"), scale="medium"), 
     "roberta-large@qqp": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@qqp"), scale="large"), 
     "roberta-large@mnli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@mnli"), scale="large"), 
-    "roberta-large@snli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@snli"), scale="llarge"), 
+    "roberta-large@snli": FoundationModelApplication(os.path.join(STATS_DIR, "roberta-large@snli"), scale="large"), 
     # ////////////////////////// -- vision models 
     "vit@Bingsu#Cat_and_Dog": FoundationModelApplication(os.path.join(STATS_DIR, "vit@Bingsu#Cat_and_Dog"), scale="small"), 
     "vit@frgfm#imagenette": FoundationModelApplication(os.path.join(STATS_DIR, "vit@frgfm#imagenette"), scale="small"), 

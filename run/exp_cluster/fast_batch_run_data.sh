@@ -4,13 +4,13 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 # trace generation 
 # bash trace/all_trace_generation.sh
 
-for root in  'trace/main/'
+for root in  'trace/Data/'
 do 
+    # match="FM-"
     match="FM-"
-    # match="roberta"
     # for trace in `{ls $root/FM-* `
-    for trace in `ls trace/main/`
-    # for trace in FM-640-roberta-base
+    for trace in `ls trace/Data/`
+    # for trace in FM-320-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-320-vit
@@ -21,14 +21,14 @@ do
             num_gpu_p_node=4
             
             add_ckpt=30
-            for multi_task_adaptivity in False # True
+            for multi_task_adaptivity in True False
             do 
-                for schedule in srtf titan optimus tiresias themis pollux # titan optimus tiresias themis pollux 
+                for schedule in titan
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300
-                    ident="${schedule}_${trace}"
-                    save_log_dir=result/main/$schedule/$trace
+                    ident="data_${schedule}_${trace}_${multi_task_adaptivity}"
+                    save_log_dir=result/data/$trace/$schedule-${multi_task_adaptivity}
                     if [[ $schedule != "titan" &&  $multi_task_adaptivity == "True" ]]; 
                     then 
                         continue 
@@ -40,8 +40,8 @@ do
                         temporal_transferability=True
                         transferability=True
                         extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
-                        ident="${schedule}_${trace}_${multi_task_adaptivity}_${transferability}"
-                        save_log_dir=result/main/$schedule/$trace-${multi_task_adaptivity}-${transferability}
+                        # ident="${schedule}_${trace}_${multi_task_adaptivity}_${transferability}"
+                        # save_log_dir=result/$schedule/$trace-${multi_task_adaptivity}-${transferability}
                         scheduling_time_interval=120
                     fi 
 
@@ -56,7 +56,7 @@ do
                     then 
                         scheduling_time_interval=60
                         # extra_cmd="--multi_task_adaptivity"
-                        extra_cmd=" --lease_term_interval=300 "
+                        extra_cmd=" --lease_term_interval=600 "
                     fi 
 
                     job_type="foundation_model"
