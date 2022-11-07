@@ -55,7 +55,7 @@ class ThemisScheduler(BaseScheduler):
         for job in jobs:
             if not self.try_allocate_resoure(job): 
                 continue 
-            self.logger.info('pending job {} is resumed at time {}'.format(job.name, cur_time))
+            self.logger.info('pending job {} is resumed at time {} with gpu {}'.format(job.name, cur_time, job.target_num_gpus))
 
 
     # abstract
@@ -92,7 +92,7 @@ class ThemisScheduler(BaseScheduler):
 
         # largest_progress = job.application.max_epochs * job.application.progress_per_epoch
         # time_ratio = (largest_progress - job.progress) / (job.max_progress - job.progress)
-        if False: 
+        if True: 
             total_job_num = len(self.running_jobs) + len(self.running_jobs)
             weighted_share = max(1, int(min(self.cluster_manager.check_total_gpus() / (total_job_num + 1e-3), job.target_num_gpus)))
             t_remaining_isolated = job.predict_remaining_time(weighted_share)

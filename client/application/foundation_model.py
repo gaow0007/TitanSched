@@ -117,6 +117,17 @@ class FoundationModelStats(object):
 FMStats = FoundationModelStats() 
 # //////////////////////////////////////////////////////////////////////////////////////////////////////
 TaskScale = {
+    # 'wnli' : 159,
+    # 'rte' : 623,
+    # 'mrpc' : 917,
+    # 'stsb' : 1438,
+    # 'sst2' : 5000,
+    # 'qnli' : 15000,
+    # 'qqp' : 50000,
+    # 'mnli' : 98176,
+    # 'snli' : 137344,
+    # 'ag_news' : 30000,
+    # 'wikitext-103':59061,
     'wnli' : 159,
     'rte' : 623,
     'mrpc' : 917,

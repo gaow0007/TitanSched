@@ -162,13 +162,15 @@ class HPOFoundationModelJob(BaseJob):
             self.running_time += seconds
             self.status = JobState.RUNNING
             return 
+        self.status = JobState.RUNNING
+
 
         delay = min(self.rescale_time, seconds)
         self.rescale_time -= delay 
         seconds -= delay 
         self.staying_time += delay
+        self.attained_service += delay * sum(self.placement)
 
-        self.status = JobState.RUNNING
         if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
             self.update_local_bsz(placement) 
@@ -185,9 +187,9 @@ class HPOFoundationModelJob(BaseJob):
                 self.completion_time = self.staying_time + delta_seconds + self.submission_time 
             self.attained_service += delta_seconds * sum(placement) 
         current_epoch = self.get_current_epoch()
-        while current_epoch >= CRITICAL_EPOCH_POINT[self.next_critical_point]: 
-            self.next_critical_point += 1
-            self.prepare_cross_boundary() 
+        # while current_epoch >= CRITICAL_EPOCH_POINT[self.next_critical_point]: 
+        #     self.next_critical_point += 1
+        #     self.prepare_cross_boundary() 
 
         self.staying_time += delta_seconds 
         self.running_time += delta_seconds
@@ -232,7 +234,7 @@ class HPOFoundationModelJob(BaseJob):
         self.status = JobState.PENDING
     
     def query_metric(self, epoch): 
-        return self.application.query_epoch(target_lr=self.target_lr, target_gradient_steps=self.target_gradient_steps, target_epoch=epoch)
+        return max(self.application.query_epoch(target_lr=self.target_lr, target_gradient_steps=self.target_gradient_steps, target_epoch=epoch), 1e-2) # should be more than 1e-2
 
     @property
     def reweight(self, ): 

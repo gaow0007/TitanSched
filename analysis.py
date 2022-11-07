@@ -64,8 +64,9 @@ def get_cdf(data):
 
 
 model_list = ['vit', 'roberta-base'] # ['roberta-base'] # , 'roberta-large'] # , 'vit', 'vit-large']
+application_list = list() 
 for model_idx, model in enumerate(model_list): 
-    filename = 'trace/main/FM-320-{}/workload-0.csv'.format(model)
+    filename = 'trace/main/FM-1-{}/workload-0.csv'.format(model)
     job_type = 'foundation_model'
     job_list = parse_job_file(filename, job_type, opt)
     duration_list = list() 
@@ -77,8 +78,15 @@ for model_idx, model in enumerate(model_list):
         gpu_list.append(job.target_num_gpus)
         service_list.append(duration_list[-1] * gpu_list[-1])
         info_list.append((service_list[-1], job.application.scale, job.application.name))
+        if job.application.name not in application_list: 
+            application_list.append(job.application.name)
+            print('name == {}'.format(job.application.name))
+            for gpu in [1, 2, 4, 8, 16]: 
+                if gpu <= job.max_num_gpus: 
+                    print("gpu {}, speedup {}".format(gpu, job.predict_remaining_time(1) / job.predict_remaining_time(gpu)))
+
     info_list = sorted(info_list)
-    for info in info_list: print(info)
+    # for info in info_list: print(info)
     # continue 
     # import pdb; pdb.set_trace() 
         

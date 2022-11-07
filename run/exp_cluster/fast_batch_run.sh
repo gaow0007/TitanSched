@@ -7,10 +7,10 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 for root in  'trace/main/'
 do 
     match="FM-"
-    # match="roberta"
+    # match="roberta-large"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/main/`
-    # for trace in FM-640-roberta-base
+    # for trace in FM-2-roberta-large
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-320-vit
@@ -21,14 +21,15 @@ do
             num_gpu_p_node=4
             
             add_ckpt=30
-            for multi_task_adaptivity in False # True
+            for multi_task_adaptivity in True False # True
             do 
-                for schedule in srtf titan optimus tiresias themis # srtf titan optimus tiresias themis pollux # titan optimus tiresias themis pollux 
+                for schedule in titan # pollux srtf titan optimus tiresias themis # srtf titan optimus tiresias themis #  # srtf titan optimus tiresias themis pollux # titan optimus tiresias themis pollux 
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300
                     ident="${schedule}_${trace}"
                     save_log_dir=result/main/$schedule/$trace
+                    mkdir -p save_log_dir
                     if [[ $schedule != "titan" &&  $multi_task_adaptivity == "True" ]]; 
                     then 
                         continue 
@@ -71,6 +72,7 @@ do
                                 --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                                 --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
                                 --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} &
+                    # exit 
                 done
             done 
         fi

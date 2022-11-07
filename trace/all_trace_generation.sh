@@ -7,13 +7,20 @@
 
 node=76
 prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
-
+set -e
 config=FM
-for density in 320 480 640
+for density in 1 1.5 2
 do 
-    for model in roberta-base roberta-large vit vit-large
+    for model_pair in "roberta-base 120"  "roberta-large 60" "vit 320" "vit-large 160"
     do
+        a=( $model_pair )
+        model=${a[0]}
+        base=${a[1]}
+        # echo $density
+        # echo $base 
+        # echo $model        
         add_metric=True
-        $prefix python -u trace/calibrate.py --min_time=300 --max_time=36000 --model=$model --num_jobs=$density --add_metric=$add_metric --add_ddl=False --add_user=False --add_job_name=False --add_fm=False --add_norm=False --repeat_number=1 --save_root=trace/main/FM-$density-$model/ 
+        $prefix python -u trace/calibrate.py --min_time=300 --max_time=36000 --model=$model --density=$density --base=$base --add_metric=$add_metric --add_ddl=False --add_user=False --add_job_name=False --add_fm=False --add_norm=False --repeat_number=1 --save_root=trace/main/FM-$density-$model/ 
     done 
 done
+

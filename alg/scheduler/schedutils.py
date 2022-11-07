@@ -1,7 +1,7 @@
 import os, sys
 sys.path.insert(0, os.path.basename(__file__) + os.sep + '..' + os.sep + '..')
 from client.job.state import JobState
-
+import json
 
 MAX_LEASE_NUM = 30 * 24 * 20 * 60
 BE_REWARD = 25
@@ -9,9 +9,41 @@ SLO_REWARD = 1000
 MAX_SEARCH_JOB = 10000
 
 
+def hpo_schedule_summary(sched): 
+    sched.logger.info('*' * 100)
+    jct_info = dict() 
+    avg_jct = 0 
+    avg_service = 0 
+    for application in sched.hpo_applications: 
+        jct = 0 
+        service = 0 
+        jct_info[application] = dict() 
+        jct_info[application]['jct'] = 0
+        jct_info[application]['service'] = 0
+        
+        for job in sched.job_manager.job_list: 
+            if application in job.application.name: 
+                service += job.attained_service 
+                if job.completion_time - job.submission_time > jct: 
+                    jct = job.completion_time - job.submission_time
+                
+        jct_info[application]['jct'] = jct
+        jct_info[application]['service'] = service
+        avg_jct += jct / len(sched.hpo_applications)
+        avg_service += service / len(sched.hpo_applications)
+        sched.logger.info('HPO application {} jct {} hours'.format(application, jct / 3600))
+        sched.logger.info('HPO application {} service {} GPU hours'.format(application, service / 3600))
+
+    sched.logger.info('HPO average jct {} hours'.format(avg_jct / 3600))
+    sched.logger.info('HPO average service {} GPU hours'.format(avg_service / 3600))
+
+    with open(os.path.join(sched.save_dir, sched.name + '_hpo.json'), "w") as f:
+        json.dump(jct_info, f)
+        f.write("\n")
+    sched.logger.info('*' * 100)
+
 
 def schedule_summary(sched):
-    len(sched.completion_jobs)
     for job in sched.job_manager.job_list: 
         if job.status != JobState.END: 
             import pdb; pdb.set_trace() 
@@ -45,7 +77,11 @@ def schedule_summary(sched):
             print('{},{}'.format(job.name, finish_time_fairness), file=f)
             job.finish_time_fairness = finish_time_fairness
 
-
+    if hasattr(sched, 'records'): 
+        with open(os.path.join(sched.save_dir, sched.name + '_logs.json'), "w") as f:
+            for record in sched.records:
+                json.dump(record, f)
+                f.write("\n")
 
 def resource_summary(sched, ):
     sched.full_resource_list.append(sched.cluster_manager.check_total_gpus())
@@ -53,7 +89,30 @@ def resource_summary(sched, ):
     sched.pending_job_num_list.append(len(sched.pending_jobs))
     sched.running_job_num_list.append(len(sched.running_jobs))
 
-
+def job_summary(sched, cur_time): 
+    job_info = dict() 
+    job_info['timestamp'] = cur_time 
+    job_info['cluster']  = {
+        'free' : sched.cluster_manager.check_free_gpus(), 
+        'total': sched.cluster_manager.check_total_gpus(), 
+    }
+    job_info['job_dist'] = {
+        'event' : len(sched.event_jobs), 
+        'pending' : len(sched.pending_jobs), 
+        'running' : len(sched.running_jobs), 
+        'completion': len(sched.completion_jobs),
+    }
+    job_info['jobs'] = [
+        {
+            "name": job.name, 
+            "placement": job.placement, 
+            "progress": job.progress / job.max_progress, 
+            "scale": job.application.scale,
+            "progress_per_epoch": job.application.progress_per_epoch, 
+        } 
+        for job in sched.running_jobs
+    ]
+    sched.records.append(job_info)
 
 class JobInfo(object):
     def __init__(self, resources, speedup_fn, creation_timestamp, attained_service,

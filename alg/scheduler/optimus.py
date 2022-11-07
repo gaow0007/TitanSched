@@ -200,7 +200,8 @@ class OptimusScheduler(BaseScheduler):
                 if job not in self.pending_jobs: 
                     self.pending_jobs.append(job)
 
-
+        self.logger.info('free gpus {}'.format(self.cluster_manager.check_free_gpus() ))
+        
     # abstract method
     def place_jobs(self, jobs, cur_time):
         jobs = sorted(jobs, key=lambda e: -e.target_num_gpus)

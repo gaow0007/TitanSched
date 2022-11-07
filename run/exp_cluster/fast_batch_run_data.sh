@@ -10,7 +10,7 @@ do
     match="FM-"
     # for trace in `{ls $root/FM-* `
     for trace in `ls trace/Data/`
-    # for trace in FM-320-roberta-base
+    # for trace in FM-roberta-base-9
     # for trace in FM-480-vit
     # for trace in debug
     # for trace in FM-320-vit
@@ -79,7 +79,7 @@ do
 done 
 
 wait 
-srun --nodes=1 --gres=gpu:0 --cpus-per-task=8 --ntasks=1 -w SG-IDC1-10-51-2-76 python plot/draw_density.py
+srun --nodes=1 --gres=gpu:0 --cpus-per-task=8 --ntasks=1 -w SG-IDC1-10-51-2-76 python plot/draw_data.py
 
  # 'trace/DDL/MIX2/' 'trace/DDL/SLO/' # 'trace/min-300-max-36000-num-320'
 

@@ -168,7 +168,7 @@ def full_main():
 
 def main(model, APPLICATIONS): 
     # mlaas_trace = parse_mlass('full_trace/MLaaS.csv')
-    # philly_trace = parse_philly('full_trace/Philly.csv')
+    philly_trace = parse_philly('trace/full_trace/Philly.csv')
     helios_trace = parse_helios('trace/full_trace/Helios.csv')
     bm_trace = parse_BM('trace/full_trace/BM.csv')
     rng = random.Random(seed)
@@ -179,20 +179,25 @@ def main(model, APPLICATIONS):
 
     for trace_name, trace in [('BM', bm_trace)]: 
     # for trace_name, trace in [('Helios', helios_trace)]: 
+    # for trace_name, trace in [('Philly', philly_trace)]: 
         sample = trace.loc[(trace.duration >= args.min_time) & (trace.duration < args.max_time)]
-        sample.insert(1, 'gpu_time', sample.num_gpus * sample.duration, True)
+
         if hasattr(args, 'gpu_limit') and args.gpu_limit > 0: 
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, args.gpu_limit))
         else: 
             sample.num_gpus = sample.num_gpus.apply(lambda gpu: min(gpu, GPU_LIMIT))
-        
+
+        sample.insert(1, 'gpu_time', sample.num_gpus * sample.duration, True)
         sample = sample.loc[sample.gpu_time < 100 * 3600]
+        sample = sample.loc[sample.duration < 24 * 3600]
+        
         if True:
             sample.submission_time = sample.submission_time.apply(lambda st : st % (24 * 60 * 60))
-            # sample = sample.loc[sample.submission_time < 16 * 3600]
-            # sample = sample.loc[sample.submission_time > 8 * 3600]
-            # sample.submission_time = sample.submission_time.apply(lambda st : st - (8 * 60 * 60))
-            sample = sample.loc[sample.submission_time < 12 * 3600]
+            sample = sample.loc[sample.submission_time < 16 * 3600]
+            sample = sample.loc[sample.submission_time > 8 * 3600]
+            sample.submission_time = sample.submission_time.apply(lambda st : st - (8 * 60 * 60))
+            # sample = sample.loc[sample.submission_time < 12 * 3600]
+            # sample = sample.loc[sample.submission_time < 8 * 3600]
         else:
             # day = 264
             # left = day * 24 * 3600
@@ -209,7 +214,8 @@ def main(model, APPLICATIONS):
                     print('day {}, sample length {}'.format(i, len(new_sample)))
             import pdb; pdb.set_trace() 
             sample = sample.loc[sample.submission_time < 8 * 3600]
-        
+        # import pdb; pdb.set_trace() 
+
         if args.num_jobs > 0: 
             sample = sample.sample(n=args.num_jobs, random_state=rng.randint(0, 1 << 32))
         for key in ['submission_time', 'num_gpus', 'duration']: 
@@ -224,20 +230,25 @@ def main(model, APPLICATIONS):
         if len(xlarge_list) == 0: 
             xlarge_list = large_list
 
+        gpu_list = sample.gpu_time.to_list() 
+        idx_list = sorted(gpu_list)
+        small_thr = idx_list[int(args.num_jobs * 0.3)]
+        medium_thr = idx_list[int(args.num_jobs * 0.9)]
+        # import pdb; pdb.set_trace() 
         for row in sample.itertuples(): 
             rec = {"submission_time": row.submission_time}
 
             num_gpus = row.num_gpus
             rec['application'] = application_list[0]
-            if row.gpu_time <= 1 * 3600:
+            if row.gpu_time <= small_thr: # 1 * 3600:
                 rec["application"] =  rng.choice(small_list)
-            elif row.gpu_time <= 5 * 3600:
+            elif row.gpu_time <= medium_thr: # 5 * 3600:
                 rec["application"] = rng.choice(medium_list)
             else: # row.gpu_time < 100 * 3600:
                 rec["application"] = rng.choice(large_list)
                 subset = sample[sample.duration <= 24 * 3600]
-                subset = subset[subset.gpu_time >= 5 * 3600]
-                subset = subset[subset.gpu_time < 10 * 3600]
+                subset = subset[subset.gpu_time >= medium_thr]
+                subset = subset[subset.gpu_time < 100 * 3600]
                 num_gpus = rng3.choice(subset.num_gpus.to_list())
                 
             if args.add_metric: 
@@ -310,6 +321,8 @@ parser.add_argument('--num_jobs', default=160, type=int, help='num jobs')
 parser.add_argument('--save_root', default=None, type=str, help='sample trace save path')
 parser.add_argument('--model', default=None, type=str, help='model name')
 parser.add_argument('--seed', default=-1, type=int, help='seed')
+parser.add_argument('--base', default=-1, type=int, help='base')
+parser.add_argument('--density', default=-1, type=float, help='base')
 parser.add_argument('--repeat_number', default=1, type=int, help='the number of repeat experiments')
 parser.add_argument('--full_trace', default=False, type=ast.literal_eval, help='whether extract all trace')
 parser.add_argument('--add_metric', default=False, type=ast.literal_eval, help='whether extract all trace')
@@ -335,7 +348,7 @@ if __name__ == '__main__':
             args.save_root = os.path.join('./min-{}-max-{}-num-{}'.format(args.min_time, args.max_time, args.num_jobs if args.num_jobs > 0 else 'full'))
         if not os.path.exists(args.save_root): 
             os.makedirs(args.save_root) 
-        
+        args.num_jobs = int(args.base * args.density)
         # for model in ['vit', 'vit-large', 'roberta-base', 'roberta-large']: 
         for model_name in [args.model]: # , 'vit', 'vit-large']: 
             APPLICATIONS = {} 

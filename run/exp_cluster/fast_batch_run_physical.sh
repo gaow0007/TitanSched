@@ -4,12 +4,12 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 # trace generation 
 # bash trace/all_trace_generation.sh
 
-for root in  'trace/'
+for root in  'trace/main'
 do 
     # match="FM-"
-    match="FM-"
+    match="FM-1-"
     # for trace in `{ls $root/FM-* `
-    for trace in `ls trace/`
+    for trace in `ls trace/main`
     # for trace in FM-160-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
@@ -38,7 +38,7 @@ do
                         temporal_transferability=True
                         transferability=True
                         extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
-                        scheduling_time_interval=300
+                        scheduling_time_interval=120
                     fi 
 
                     if [[ $schedule == "themis" ]] ;

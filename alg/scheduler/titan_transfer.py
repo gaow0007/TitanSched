@@ -138,9 +138,10 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
             if jobA.application.task_name != jobB.application.task_name: 
                 temporal_transfer_job = TemporalTransferFoundationModelJob(jobA, jobB)
                 # if 'snli' in temporal_transfer_job.name: 
-                #     self.logger.info('temporal weight weight {}, job name {}'.format(temporal_transfer_job.reweight, temporal_transfer_job.name))
+                
 
                 if temporal_transfer_job.reweight < 1.1: continue  
+                # self.logger.info('temporal weight weight {}, job name {}'.format(temporal_transfer_job.reweight, temporal_transfer_job.name))
                 fair_remaining_time = max(temporal_transfer_job.predict_remaining_time(min(fair_placement * temporal_transfer_job.job_number, temporal_transfer_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
                 temporal_transfer_job_list.append(temporal_transfer_job)

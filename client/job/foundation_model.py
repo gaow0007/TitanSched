@@ -442,6 +442,7 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
                                                         taskB=self.modelB.application.task_name, target_metric=self.target_metric)
         self.middle_max_progress = self.modelA.max_progress
         self.middle_completion_time = None 
+        self.srtf_progress = self.modelA.max_progress + self.modelB.max_progress + min(self.modelA.max_progress, self.modelB.max_progress)
 
 
     def step(self, seconds, **kwargs):
@@ -538,7 +539,7 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
 
     @property
     def reweight(self, ): 
-        return self.modelB.max_progress / self.max_progress 
+        return self.srtf_progress / self.max_progress 
     
     
     @property
@@ -582,7 +583,7 @@ class MtaskFoundationModelJob(FoundationModelJob):
                                                         taskB=self.modelB.application.task_name, target_metric=self.modelB.target_metric) 
         self.training_epochs = max(epochA, epochB)
         # self.max_progress = self.training_epochs * progress_per_epoch
-        self.max_progress = self.modelA.application.progress_per_epoch * epochA + self.modelB.application.progress_per_epoch * epochB
+        # self.max_progress = self.modelA.application.progress_per_epoch * epochA + self.modelB.application.progress_per_epoch * epochB
         self.srtf_progress = self.modelA.max_progress + self.modelB.max_progress + min(self.modelA.max_progress, self.modelB.max_progress)
         self.target_batch_size = self.modelA.target_batch_size + self.modelB.target_batch_size
         self.atomic_bsz = 0 
