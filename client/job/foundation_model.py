@@ -43,7 +43,6 @@ class FoundationModelJob(BaseJob):
             self.training_epochs = self.application.max_epochs
             
         self.target_batch_size = int(df.target_batch_size)
-        self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
         
         self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
         
@@ -52,6 +51,12 @@ class FoundationModelJob(BaseJob):
         self.physical = kwargs.get('physical', 'False')
         self.failure_ratio = kwargs.get('failure_ratio', 0.05)
         self.next_target_epoch = 0 
+        self.estimation_error = kwargs.get('estimation_error', 0)
+        # key step 
+        tmp_error = self.estimation_error
+        self.estimation_error = 0
+        self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
+        self.estimation_error = tmp_error 
 
 
     def get_current_epoch(self, ): 
@@ -149,7 +154,7 @@ class FoundationModelJob(BaseJob):
         total_batch_size = sum(placement) * self.atomic_bsz * (self.accum_steps + 1)
         delta_progress = self.max_progress - self.progress
         delta_seconds = round(float(delta_progress / total_batch_size *  total_time)) 
-        return delta_seconds
+        return delta_seconds * max((1 + self.estimation_error * np.random.randn()), 0.1)
 
     def compute_local_bsz(self, placement): 
         app = self.application
@@ -241,7 +246,11 @@ class FoundationModelJob(BaseJob):
     def current_device(self, ): 
         if not hasattr(self, 'topology') or self.topology is None or len(self.topology) == 0:  
             return DEFAULT_GPU_KIND
-        else: 
+        elif 'V100' in self.topology:
+            return 'V100'
+        elif 'A100' in self.topology: 
+            return 'A100'
+        else:  
             for topo in self.topology: 
                 if topo['gpu_kind'] == 'V100': return 'V100'
             return 'A100'
@@ -336,7 +345,10 @@ class FoundationModelJob(BaseJob):
 
     def reallocate(self, placement, **kwargs):
         if placement:
-            self.placement = tuple(placement)
+            if isinstance(placement, dict): 
+                self.placement = {key:tuple(value) for key, value in placement.items()}
+            else: 
+                self.placement = tuple(placement)
             if kwargs.get('topology') is not None: 
                 self.topology = kwargs.get('topology')
             else: 
@@ -564,7 +576,7 @@ class MtaskFoundationModelJob(FoundationModelJob):
         else: 
             self.modelA, self.modelB = modelB, modelA
 
-        for attr in dir(self.modelB): 
+        for attr in dir(self.modelA): 
             if not attr.startswith('__') and not hasattr(self, attr): 
                 if attr in ['reweight', 'job_number', 'base_weight_scale']: continue
                 instance = getattr(self.modelA, attr)

@@ -44,7 +44,7 @@ def parse_job_file(filename, job_type, job_manager, opt):
             job_instance = JobFactory(name=job_type)(name=row.name, submission_time=row.submission_time,\
                                                 target_duration=row.duration, target_num_replicas=row.num_gpus, target_gpus_per_replica=1)
         elif job_type == 'foundation_model': 
-            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
+            job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01, estimation_error=opt.estimation_error*0.01) 
         elif job_type == 'hpo_foundation_model': 
             job_instance = JobFactory(name=job_type)(row, add_ckpt=opt.add_ckpt, physical=opt.physical, failure_ratio=opt.failure_ratio*0.01) 
         else: 

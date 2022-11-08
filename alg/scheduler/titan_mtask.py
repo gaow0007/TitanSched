@@ -32,7 +32,10 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
             "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
         }
     else: 
-        cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+        cluster_gpu_info = {
+            "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+            "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+        }
 
     candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
 
@@ -52,8 +55,8 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
                 mtask_job = MtaskFoundationModelJob(jobA, jobB)
                 # if 'snli' in mtask_job.name: 
                 if mtask_job.reweight < 1.1: continue  
-                if len(mtask_job_list) >= 10: 
-                     weight_threshold = np.log10(len(mtask_job_list)) + 0.1
+                if len(mtask_required_resource_list) >= 10: 
+                     weight_threshold = np.log10(len(mtask_required_resource_list)) + 0.1
                      if mtask_job.reweight < weight_threshold: continue 
 
                 # self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))

@@ -6,6 +6,16 @@ from server import meta
 from utils import util
 from alg.utils.topology import Topology
 from abc import ABCMeta, abstractmethod
+import collections
+
+
+def allocation2num(allocations): 
+    if isinstance(allocations, int): 
+        return allocations 
+    elif isinstance(allocations, dict): 
+        return sum([sum(placement) for placement in allocations.values()])
+    elif isinstance(allocations, collections.Iterable): 
+        return sum([gpu for gpu in allocations])
 
 
 class AllocationPolicy(object):
@@ -181,9 +191,7 @@ class MetaPlaceMent(object):
             node_count += len(switch.node_list)
         return node_count
         
-    
-    def place_jobs(self, job): 
-        # TODO, mix allocation
+    def single_place_jobs(self, job): 
         allocation_vector = [0 for _ in range(self.node_count)]
         current_node_id = 0 
         for key in self.cluster_keys: 
@@ -197,6 +205,66 @@ class MetaPlaceMent(object):
             else: 
                 current_node_id += node_count
         
+        return False 
+        
+
+    def place_jobs(self, job): 
+        if isinstance(job.target_num_gpus, int): 
+            return self.single_place_jobs(job)
+
+        # TODO, mix allocation
+        placement_vector = dict() 
+        topology_vector = dict() 
+        placement_list = list() 
+        topology_list = list() 
+        current_node_id = 0 
+        success = True
+        for key in self.cluster_keys: 
+            placementer = self.placement_info[key]
+            if key not in job.target_num_gpus: 
+                continue 
+            target_num_gpus = job.target_num_gpus[key]
+            if isinstance(target_num_gpus, collections.Iterable): 
+                target_num_gpus = sum(target_num_gpus)
+
+            placement, topology =  placementer.place_jobs(job, target_num_gpus=target_num_gpus, reallocate=False)
+            node_count = self.node_count_of_cluster(placementer.cluster_manager)
+
+            if sum(placement) == target_num_gpus: 
+                placement_vector[key] = placement
+                topology_vector[key] = topology
+                current_node_id += node_count
+                topology_list.append(topology)
+                placement_list.append(placement)
+            else: 
+                success = False 
+                break 
+                
+        if success: 
+            job.reallocate(placement_vector, topology=topology_vector)
+            return True 
+        else: 
+            for topology in topology_list: 
+                placementer = self.placemnet_info[topology['gpu_kind']]
+                
+                # disconnect resources and job topology
+                for placement in topology: 
+                    assert 'switch' in placement and 'nodes' in placement
+                    found = False
+                    cluster_key = placement['gpu_kind']
+                    cluster_instance = self.placement_info[key].cluster_manager
+                    for switch in cluster_instance.switch_list:
+                        if switch.id == placement['switch']:
+                            found = True
+                            assert switch.release_job_resource(placement['nodes'], job=job) == True
+                            break
+                    assert found == True, 'should exist in switch list'
+
+                import pdb; pdb.set_trace() 
+            job.placement = None 
+            job.topology = None 
+            
+
         return False 
         
         

@@ -36,8 +36,14 @@ class MetaCluster(object):
     def release_job_resource(self, job, status='END'):
         if not hasattr(job, 'topology'): 
             import pdb; pdb.set_trace() 
-            
-        for placement in job.topology:
+        topology = job.topology
+        if isinstance(topology, dict): 
+            topo_list = list() 
+            for topo in topology.values(): 
+                topo_list.extend(topo)
+            topology = topo_list 
+        
+        for placement in topology:
             assert 'switch' in placement and 'nodes' in placement
             found = False
             cluster_key = placement['gpu_kind']
@@ -89,6 +95,7 @@ class MetaCluster(object):
             key_info = [key_info]
         free_gpu_num = 0
         for key in key_info: 
+            if key not in self.cluster_instance_info: continue 
             cluster = self.cluster_instance_info[key]
             free_gpu_num += sum([switch.check_total_gpus() for switch in cluster.switch_list])
         return free_gpu_num

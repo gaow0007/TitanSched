@@ -137,7 +137,6 @@ dmypy.json
 *.pdf
 *.bak
 trace/*
-plot/*
 ablation/*
 !trace/*py
 !trace/*sh

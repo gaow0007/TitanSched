@@ -4,16 +4,16 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 # trace generation 
 # bash trace/all_trace_generation.sh
 
-for root in  'trace/'
+for root in  'trace/main/'
 do 
     # match="FM-"
     match="FM-"
     # for trace in `{ls $root/FM-* `
     # for trace in `ls trace/`
-    for trace in FM-480-roberta-base
+    # for trace in FM-320-roberta-base
     # for trace in FM-480-vit
     # for trace in debug
-    # for trace in FM-480-vit
+    for trace in FM-1-vit
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -22,22 +22,22 @@ do
             
             add_ckpt=30
             
-            for heterogeneity in  False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
+            for heterogeneity in False # False # False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
             do 
-                schedule=titan
+                schedule=themis
                 extra_cmd=""
                 scheduling_time_interval=300
-                ident="heter_debug_${schedule}_${trace}"
-                save_log_dir=result/heter/$schedule/$trace/
+                ident="debug_heter_${heterogeneity}_${schedule}_${trace}"
+                save_log_dir=result/heter/$heterogeneity/$trace/
                 mkdir -p $save_log_dir
-                multi_task_adaptivity=True
+                multi_task_adaptivity=False
                 
                 if [[ $schedule == "titan" ]] ;
                 then 
                     temporal_transferability=True
                     transferability=True
                     extra_cmd=" --multi_task_adaptivity=$multi_task_adaptivity --temporal_transferability=$temporal_transferability --transferability=$transferability"
-                    scheduling_time_interval=300
+                    scheduling_time_interval=120
                     heterogeneity=$heterogeneity
                 fi 
 
@@ -58,7 +58,7 @@ do
                             --save_log_dir=${save_log_dir} --ident=$ident \
                             --placement=consolidate --num_node_p_switch=$num_node_p_switch \
                             --num_gpu_p_node=$num_gpu_p_node --scheduling_time_interval=$scheduling_time_interval \
-                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} #  &
+                            --job_type=$job_type --add_ckpt=$add_ckpt ${extra_cmd} # &
             done 
 
         fi

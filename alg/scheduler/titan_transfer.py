@@ -40,7 +40,10 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
             "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
         }
     else: 
-        cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+        cluster_gpu_info = {
+            "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+            "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+        }
 
     candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
 
@@ -138,7 +141,10 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
             "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
         }
     else: 
-        cluster_gpu_info = {"GPU": self.cluster_manager.check_total_gpus()}
+        cluster_gpu_info = {
+            "A100": self.cluster_manager.check_total_gpus(key_info=["A100"]), 
+            "V100": self.cluster_manager.check_total_gpus(key_info=["V100"]),
+        }
 
     candidate_allocations = create_candidate_allocations(self.cluster_manager, cluster_gpu_info, self.heterogeneity)
 
@@ -160,6 +166,10 @@ def temporal_transfer_builder(self, runnable_jobs, prev_time, cur_time, required
                 
 
                 if temporal_transfer_job.reweight < 1.1: continue  
+                if len(temporal_transfer_required_resource_list) >= 10: 
+                     weight_threshold = np.log10(len(temporal_transfer_required_resource_list)) + 0.1
+                     if temporal_transfer_job.reweight < weight_threshold: continue 
+
                 # self.logger.info('temporal weight weight {}, job name {}'.format(temporal_transfer_job.reweight, temporal_transfer_job.name))
                 fair_remaining_time = max(temporal_transfer_job.predict_remaining_time(min(fair_placement * temporal_transfer_job.job_number, temporal_transfer_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1

@@ -52,6 +52,11 @@ def schedule_summary(sched):
     for job in sched.job_manager.job_list: 
         if job.status != JobState.END: 
             import pdb; pdb.set_trace() 
+    for job in sched.job_manager.job_list: 
+        if isinstance(job.target_num_gpus, dict):
+            from .titan_utils import convert_allocation
+            allocation = convert_allocation(job.target_num_gpus)
+            job.target_num_gpus = sum(list(allocation.values()))
 
     assert all([job.status == JobState.END for job in sched.job_manager.job_list])
     attribute_list = ['name', 'submission_time', 'pending_time', 'staying_time', 'completion_time', 'num_restarts', 'max_progress', 'target_num_gpus']

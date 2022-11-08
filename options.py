@@ -66,6 +66,7 @@ class Options:
         parser.add_argument('--add_ckpt', default=30, type=int, help='checkpoint overhead for simulation')
         parser.add_argument('--physical', default=False, type=ast.literal_eval, help="simulate physical error")
         parser.add_argument('--failure_ratio', default=5, type=float, help="detect failure ratio to simulate")
+        parser.add_argument('--estimation_error', default=0, type=float, help="estimation error")
         parser.add_argument('--heter', default=False, type=ast.literal_eval, help='consider the hetergeneous gpus')
         parser.add_argument('--heter_gpus', default=None, metavar='N', type=str, nargs='+', help='heteregeneous gpu capabilities')
         self.args = parser.parse_args()

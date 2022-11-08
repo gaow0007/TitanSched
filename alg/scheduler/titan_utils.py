@@ -43,13 +43,47 @@ def compute_weight_metric(METHOD, job, placement, fair_placement, fair_remaining
 
 
 def allocation2num(allocations): 
-    if isinstance(allocations, int): 
+    if allocations is None: 
+        return 0 
+    elif isinstance(allocations, int): 
         return allocations 
     elif isinstance(allocations, dict): 
         return sum([sum(placement) for placement in allocations.values()])
     elif isinstance(allocations, collections.Iterable): 
         return sum([gpu for gpu in allocations])
+    else: 
+        raise NotImplementedError 
     
+
+def convert_allocation(allocation): 
+    if allocation is None: 
+        return {'V100':0, 'A100':0}
+    elif isinstance(allocation, int): 
+        return {'V100': allocation, 'A100': 0}
+    elif isinstance(allocation, tuple): 
+        return {'V100': sum(allocation), 'A100': 0}
+    elif isinstance(allocation, list): 
+        return {'V100': sum(allocation), 'A100': 0}
+    elif isinstance(allocation, dict): 
+        assert 'V100' in allocation or 'A100' in allocation
+        allocation_dict = dict() 
+        for key in ['V100', 'A100']: 
+            if key in allocation: 
+                allocation_dict[key] = allocation2num(allocation[key])
+            else: 
+                allocation_dict[key] = 0 
+        return allocation_dict
+    
+    raise NotImplementedError 
+
+
+def allocation_equal(allocation1, allocation2): 
+    allocation1 = convert_allocation(allocation1)
+    allocation2 = convert_allocation(allocation2)
+    for key in ['V100', 'A100']: 
+        if allocation1[key] != allocation2[key]: 
+            return False 
+    return True 
 
 def build_placement_from_num(num_gpus): 
     if num_gpus == 0: 
@@ -76,8 +110,11 @@ def create_candidate_allocations(cluster_manager, cluster_gpu_info, heterogeneit
                 candidate_allocations.append({"V100": placement_V100, "A100": placement_A100})
     else: 
         candidate_allocations = list() 
-        total_gpu_num = cluster_manager.check_total_gpus()
-        for num_gpus in [0, 1, 2, 3] + [4 * i for i in range(1, total_gpu_num//4+1)]: 
-            placement = build_placement_from_num(num_gpus)
-            candidate_allocations.append({"V100":placement})
+        print(cluster_gpu_info)
+        for GPU_KIND in ["V100", "A100"]:
+            total_gpu_num = cluster_gpu_info[GPU_KIND]    
+            if total_gpu_num == 0: continue 
+            for num_gpus in [0, 1, 2, 3] + [4 * i for i in range(1, total_gpu_num//4+1)]: 
+                placement = build_placement_from_num(num_gpus)
+                candidate_allocations.append({GPU_KIND:placement})
     return candidate_allocations

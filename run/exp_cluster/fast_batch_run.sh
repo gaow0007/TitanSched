@@ -9,9 +9,9 @@ do
     match="FM-"
     # match="roberta-large"
     # for trace in `{ls $root/FM-* `
-    # for trace in `ls trace/main/`
+    for trace in `ls trace/main/`
     # for trace in FM-2-roberta-large
-    for trace in FM-1.5-vit-large
+    # for trace in FM-1.5-vit-large
     # for trace in debug
     # for trace in FM-320-vit
     do  
@@ -21,9 +21,9 @@ do
             num_gpu_p_node=4
             
             add_ckpt=30
-            for multi_task_adaptivity in True # False # True
+            for multi_task_adaptivity in False # False # True
             do 
-                for schedule in titan # pollux srtf optimus tiresias themis # srtf titan optimus tiresias themis #  # srtf titan optimus tiresias themis pollux # titan optimus tiresias themis pollux 
+                for schedule in pollux srtf optimus tiresias themis  # titan srtf titan optimus tiresias themis #  # srtf titan optimus tiresias themis pollux # titan optimus tiresias themis pollux 
                 do 
                     extra_cmd=""
                     scheduling_time_interval=300
