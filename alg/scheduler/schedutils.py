@@ -29,15 +29,20 @@ def hpo_schedule_summary(sched):
                 
         jct_info[application]['jct'] = jct
         jct_info[application]['service'] = service
+        jct_info[application]['best_trials'] = list() 
         avg_jct += jct / len(sched.hpo_applications)
         avg_service += service / len(sched.hpo_applications)
         sched.logger.info('HPO application {} jct {} hours'.format(application, jct / 3600))
         sched.logger.info('HPO application {} service {} GPU hours'.format(application, service / 3600))
 
+    for job in sched.hpo_winners: 
+        application = job.application.name 
+        jct_info[application]['best_trials'].append((job.name, job.target_lr, job.target_gradient_steps, job.query_metric(epoch=10)))
+
     sched.logger.info('HPO average jct {} hours'.format(avg_jct / 3600))
     sched.logger.info('HPO average service {} GPU hours'.format(avg_service / 3600))
 
-    with open(os.path.join(sched.save_dir, sched.name + '_hpo.json'), "w") as f:
+    with open(os.path.join(sched.save_dir, sched.name + '_results.json'), "w") as f:
         json.dump(jct_info, f)
         f.write("\n")
     sched.logger.info('*' * 100)

@@ -224,11 +224,12 @@ class FoundationModelApplication(object):
         epoch_info = [int(round(epoch)) for epoch in performance_traj[self.metric_key + '_epoch']]
         epoch_metric_list = sorted([(epoch, metric) for (epoch, metric) in zip(epoch_info, metric_info)])
         max_metric = 0
+        if len(epoch_metric_list) == 0: 
+            return 1e-2
         for epoch, metric in epoch_metric_list: 
             max_metric = max(metric, max_metric)
             if epoch >= target_epoch: 
                 return max_metric
-        import pdb; pdb.set_trace() 
 
 
     def query_index(self, ): 

@@ -11,13 +11,13 @@ prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-5
 config=FM
 
 
-for model_pair in "roberta-base 120"  "roberta-large 60" # "vit 320" "vit-large 160"
+for model_pair in "roberta-base 120"  "roberta-large 60"  "vit 320" "vit-large 160"
 do
     a=( $model_pair )
     model=${a[0]}
     base=${a[1]}
 
-    for data_number in 6 9 
+    for data_number in 3 6 9 
     do
         add_metric=True
         $prefix python -u trace/data_calibrate.py --model=$model --min_time=300 --max_time=36000 \

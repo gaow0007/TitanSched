@@ -13,7 +13,7 @@ do
     # for trace in FM-720-vit-large
     # for trace in FM-roberta-base
     # for trace in debug
-    # for trace in HPO-FM-roberta-base # FM-480-roberta-base
+    # for trace in FM-vit # FM-480-roberta-base
     for trace in `ls trace/HPO/`
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
@@ -21,9 +21,9 @@ do
             num_node_p_switch=2
             num_gpu_p_node=4
             add_ckpt=30
-            for repeat in {1..50} # {1..50} # {31..31}
+            for repeat in {1..50} # {1..50} # {1..50} # {31..31}
             do 
-                for temporal_transferability in True # False # False # False # True 
+                for temporal_transferability in True False # False # False # True 
                 do 
                     for schedule in hpo_titan # titan # themis  tiresias optimus srtf  # tiresias optimus srtf  # srtf # themis # titan tiresias optimus srtf 
                     do 
@@ -38,7 +38,8 @@ do
                         # extra_cmd=""
                         scheduling_time_interval=120
                         job_type="hpo_foundation_model"
-
+                        # echo $save_log_dir
+                        # exit 
                         $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-$repeat.csv \
                                     --save_log_dir=${save_log_dir} --ident=$ident \
                                     --placement=consolidate --num_node_p_switch=$num_node_p_switch \
@@ -51,3 +52,4 @@ do
         
     done
 done 
+srun --nodes=1 --gres=gpu:0 --cpus-per-task=8 --ntasks=1 -w SG-IDC1-10-51-2-76 python plot/draw_hpo.py
