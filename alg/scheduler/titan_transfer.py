@@ -50,17 +50,36 @@ def transfer_builder(self, runnable_jobs, prev_time, cur_time, required_resource
     transfer_equalivent_allocation_list = list() 
 
     transfer_job_list = list() 
-    for idxA in range(len(intermediate_jobs)): 
-        jobA = intermediate_jobs[idxA]
-        for idxB in range(number_of_transfer_training): 
-            jobB = transfer_jobs[idxB]
+    # for idxA in range(len(intermediate_jobs)): 
+    #     jobA = intermediate_jobs[idxA]
+    #     for idxB in range(number_of_transfer_training): 
+    #         jobB = transfer_jobs[idxB]
+    #         if jobA.application.task_name != jobB.application.task_name: 
+    #             transfer_job = TransferFoundationModelJob(jobA, jobB)
+    #             # if 'snli' in transfer_job.name: 
+    #             #     self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
+    #             # import pdb; pdb.set_trace() 
+    #             # self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
+    #             if transfer_job.reweight < 1.1: continue  
+    
+    for idxB in range(number_of_transfer_training): 
+        jobB = tranfer_jobs[idxA]
+        best_intermediate_job = None 
+        best_weight = 0
+        for idxA in range(len(intermediate_jobs)): 
+            jobA = intermediate_jobs[idxA]
             if jobA.application.task_name != jobB.application.task_name: 
                 transfer_job = TransferFoundationModelJob(jobA, jobB)
-                # if 'snli' in transfer_job.name: 
-                #     self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
-                # import pdb; pdb.set_trace() 
-                # self.logger.info('transfer weight {}, job name {}'.format(transfer_job.reweight, transfer_job.name))
                 if transfer_job.reweight < 1.1: continue  
+                if transfer_job.reweight > best_weight: 
+                    best_weight = transfer_job.reweight
+                    best_intermediate_job = jobA
+
+
+        if True:
+            if best_intermediate_job is not None: 
+                jobA = best_intermediate_job
+                transfer_job = TransferFoundationModelJob(jobA, jobB)
                 fair_remaining_time = max(transfer_job.predict_remaining_time(min(fair_placement * transfer_job.job_number, transfer_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
                 transfer_job_list.append(transfer_job)

@@ -52,6 +52,10 @@ def mtask_builder(self, runnable_jobs, prev_time, cur_time, required_resource_li
                 mtask_job = MtaskFoundationModelJob(jobA, jobB)
                 # if 'snli' in mtask_job.name: 
                 if mtask_job.reweight < 1.1: continue  
+                if len(mtask_job_list) >= 10: 
+                     weight_threshold = np.log10(len(mtask_job_list)) + 0.1
+                     if mtask_job.reweight < weight_threshold: continue 
+
                 # self.logger.info('mtask weight {}, job name {}'.format(mtask_job.reweight, mtask_job.name))
                 fair_remaining_time = max(mtask_job.predict_remaining_time(min(fair_placement * mtask_job.job_number, mtask_job.max_num_gpus)), self.scheduling_time_interval)
                 max_equalivent_allocation_idx += 1
