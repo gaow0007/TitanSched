@@ -1,5 +1,5 @@
 node=75
-prefix="srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
+prefix="" # "srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1-10-51-2-$node"
 
 # trace generation 
 # bash trace/all_trace_generation.sh
@@ -40,19 +40,8 @@ do
                     scheduling_time_interval=120
                     heterogeneity=$heterogeneity
                 fi 
-
-                if [[ $schedule == "themis" ]] ;
-                then 
-                    # extra_cmd="--multi_task_adaptivity"
-                    extra_cmd=" --lease_term_interval=300"
-                fi 
-
+                
                 job_type="foundation_model"
-                if [[ $schedule == "pollux" ]] ; 
-                then 
-                    job_type="batch_elastic"
-                    scheduling_time_interval=300
-                fi 
 
                 $prefix python -u main.py --schedule=$schedule --trace=$root/$trace/workload-0.csv \
                             --save_log_dir=${save_log_dir} --ident=$ident \

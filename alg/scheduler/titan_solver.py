@@ -17,7 +17,7 @@ class TitanMultiTaskAdaptivitySolver(object):
                             temporal_transfer_required_resource_list, temporal_transfer_weight_per_allication_list, temporal_transfer_equalivent_allocation_list, temporal_transfer_unique_job_num, \
                             cluster_capacity, max_seconds=1, power=1): 
 
-        m = Model(solver_name = CBC)
+        m = Model(solver_name = GRB)
         var_len = len(required_resource_list) + len(mtask_required_resource_list) + len(transfer_required_resource_list) + len(temporal_transfer_required_resource_list)
         X = [m.add_var(var_type=BINARY) for i in range(var_len)]
         tot_weight_list = weight_per_allocation_list + mtask_weight_per_allication_list + transfer_weight_per_allication_list + temporal_transfer_weight_per_allication_list

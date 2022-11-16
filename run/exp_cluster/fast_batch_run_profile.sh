@@ -7,8 +7,8 @@ prefix="" # "srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1
 for root in  'trace/main/'
 do 
     match="FM-1-"
-    for trace in `ls trace/main/`
-    # for trace in FM-1-roberta-large
+    # for trace in `ls trace/main/`
+    for trace in FM-1-roberta-large
     do  
         if [[ "$trace" == *"$match"*  ]]; then 
             echo $trace 
@@ -17,7 +17,7 @@ do
             add_ckpt=30
             multi_task_adaptivity=True
             schedule=titan
-            for profile in True False 
+            for profile in True # False 
             do 
                 extra_cmd=""
 
