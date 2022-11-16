@@ -57,7 +57,14 @@ class FoundationModelJob(BaseJob):
         self.estimation_error = 0
         self.total_time_running_exclusively = self.predict_remaining_time(df.num_gpus)
         self.estimation_error = tmp_error 
-
+        self.profile = kwargs.get('profile', False) 
+        if self.profile: 
+            self.max_num_gpus = min(self.max_num_gpus, 2)
+        
+    def set_max_gpus(self, cur_gpus):
+        self.max_num_gpus = max(cur_gpus * 2, self.max_num_gpus)
+        self.max_num_gpus = min(self.max_num_gpus, 32)
+        self.max_num_gpus = min(self.max_num_gpus, self.target_batch_size // self.application.min_local_bsz)
 
     def get_current_epoch(self, ): 
         return self.progress / self.application.progress_per_epoch
@@ -322,6 +329,8 @@ class FoundationModelJob(BaseJob):
                 self.placement = list(self.placement.values())[0]
 
         self.attained_service += delay * sum(self.placement)
+        if self.profile: 
+            self.set_max_gpus(sum(self.placement))
 
         if abs(self.progress - self.max_progress) > 0.1: 
             placement = tuple(filter(None, self.placement))
@@ -479,6 +488,9 @@ class TemporalTransferFoundationModelJob(FoundationModelJob):
         self.staying_time += delay
         self.status = JobState.RUNNING
 
+        if self.profile: 
+            self.set_max_gpus(sum(self.placement))
+            
         if self.progress < self.middle_max_progress and self.middle_completion_time is None: 
             placement = tuple(filter(None, self.placement))
             self.update_local_bsz(placement) 

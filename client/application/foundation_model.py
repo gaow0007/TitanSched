@@ -27,6 +27,7 @@ class FoundationModelSpeed(object):
         self.memory_consumption = {} 
         self.context_switch_overhead = {} 
         # load files
+        accelerate = 2.0
         for GPU_KIND in ['V100', 'A100']: 
             placement_file = os.path.join(trace_dir, GPU_KIND, "{}_placements.csv".format(self.name))
             if os.path.exists(placement_file): 
@@ -36,12 +37,18 @@ class FoundationModelSpeed(object):
                 placements["num_replicas"] = \
                     placements.placement.apply(lambda p: sum(map(int, str(p))))
                 self.placements[GPU_KIND] = placements
+                
+                if GPU_KIND == 'A100': 
+                    self.placements[GPU_KIND].step_time.apply(lambda p: p / 2.0)
+                    
 
             scalability_file = os.path.join(trace_dir, GPU_KIND, "{}_scalability.csv".format(self.name))
             if os.path.exists(scalability_file): 
                 scalability = pandas.read_csv(scalability_file)
                 self.scalability[GPU_KIND] = scalability
-
+                if GPU_KIND == 'A100': 
+                    self.scalability[GPU_KIND].step_time.apply(lambda p: p / 2.0)
+                    
             memory_consumption_file = os.path.join(trace_dir, "{}_memory.csv".format(self.name))
             if os.path.exists(memory_consumption_file): 
                 memory_consumption = pandas.read_csv(memory_consumption_file)

@@ -245,7 +245,6 @@ class TitanScheduler(BaseScheduler):
                     weight_per_allocation_list.append(1e-4*job.base_weight_scale)
                     equalivent_allocation_list.append(idx)
                     continue 
-                
                 if allocation2num(allocations) > job.max_num_gpus: continue 
                 # METHOD, job, placement, fair_placement, fair_remaining_time, cur_time, scheduling_time_interval
                 weight = compute_weight_metric(METHOD, job, allocations, fair_placement, fair_remaining_time, cur_time, self.scheduling_time_interval)
@@ -405,7 +404,7 @@ class TitanScheduler(BaseScheduler):
                         temporal_transfer_job.target_num_gpus = solution[unique_job_num + mtask_unique_job_num + transfer_unique_job_num + idx]
 
 
-            
+        
         self.logger.info('solution == {}'.format(solution))
         for job in runnable_jobs: 
             self.logger.info('single job {} weight {}'.format(job.name, job.reweight))

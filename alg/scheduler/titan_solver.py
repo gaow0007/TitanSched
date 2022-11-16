@@ -273,7 +273,7 @@ class TitanSolver(object):
 
     def job_selection(self, required_resource_list, weight_per_allocation_list, equalivent_allocation_list, unique_job_num, cluster_capacity, max_seconds=1, power=1): 
 
-        m = Model(solver_name = CBC)
+        m = Model(solver_name = GRB)
         var_len = len(required_resource_list)
         X = [m.add_var(var_type=BINARY) for i in range(var_len)]
         obj_list = [X[i] * (weight_per_allocation_list[i] ** power) for i in range(var_len)]

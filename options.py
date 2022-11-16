@@ -69,6 +69,7 @@ class Options:
         parser.add_argument('--estimation_error', default=0, type=float, help="estimation error")
         parser.add_argument('--heter', default=False, type=ast.literal_eval, help='consider the hetergeneous gpus')
         parser.add_argument('--heter_gpus', default=None, metavar='N', type=str, nargs='+', help='heteregeneous gpu capabilities')
+        parser.add_argument('--profile_speed', default=False, type=ast.literal_eval, help='profile from scratch')
         self.args = parser.parse_args()
     
     def init(self, ):
