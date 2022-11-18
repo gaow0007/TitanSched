@@ -1,1 +1,0 @@
-{"vit@fashion_mnist": {"jct": 3168.4837489128113, "service": 15052.998738765717, "best_trials": [["vit@fashion_mnist-17", "4e-4", 4, 0.9324]]}, "vit@imagenet-split-2": {"jct": 6512.161249637604, "service": 30256.062481880188, "best_trials": [["vit@imagenet-split-2-43", "4e-4", 1, 0.8862]]}}

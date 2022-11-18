@@ -1,1 +1,0 @@
-{"vit@frgfm#imagenette": {"jct": 736.1612496376038, "service": 4700.676239490509, "best_trials": [["vit@frgfm#imagenette-16", "4e-4", 1, 0.9903184713375797]]}, "vit@fashion_mnist": {"jct": 3240, "service": 14016.192490577698, "best_trials": [["vit@fashion_mnist-39", "1e-4", 1, 0.9316]]}}

@@ -1,1 +1,0 @@
-{"roberta-base@qqp": {"jct": 15070.596037864685, "service": 71455.55146384239, "best_trials": [["roberta-base@qqp-19", "4e-4", 12, 0.8678947886907695]]}, "roberta-base@mnli": {"jct": 18305.197028398514, "service": 67005.965331316, "best_trials": [["roberta-base@mnli-46", "4e-4", 12, 0.8697911360163015]]}}

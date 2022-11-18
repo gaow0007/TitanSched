@@ -1,1 +1,0 @@
-{"roberta-large@sst2": {"jct": 10242.03677892685, "service": 37733.095754146576, "best_trials": [["roberta-large@sst2-19", "4e-4", 12, 0.9621559633027523]]}, "roberta-large@qnli": {"jct": 15371.03677892685, "service": 61181.77235746384, "best_trials": [["roberta-large@qnli-45", "4e-4", 8, 0.9492952590151931]]}}
