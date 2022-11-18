@@ -140,4 +140,5 @@ trace/*
 ablation/*
 !trace/*py
 !trace/*sh
-result/*
+!trace/*zip
+# result/*

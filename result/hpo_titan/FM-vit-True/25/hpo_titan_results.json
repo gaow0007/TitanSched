@@ -1,0 +1,1 @@
+{"vit@mnist": {"jct": 3684.4837489128113, "service": 15809.643737316132, "best_trials": [["vit@mnist-17", "4e-4", 4, 0.9893]]}, "vit@imagenet-split-2": {"jct": 5612.483748912811, "service": 22240.3537402153, "best_trials": [["vit@imagenet-split-2-44", "4e-4", 4, 0.8826]]}}

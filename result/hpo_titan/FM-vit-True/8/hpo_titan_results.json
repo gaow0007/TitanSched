@@ -1,0 +1,1 @@
+{"vit@frgfm#imagenette": {"jct": 736.1612496376038, "service": 4700.676239490509, "best_trials": [["vit@frgfm#imagenette-16", "4e-4", 1, 0.9903184713375797]]}, "vit@cifar100": {"jct": 2742.3224992752075, "service": 12308.514989852905, "best_trials": [["vit@cifar100-41", "1e-4", 8, 0.6082], ["vit@cifar100-43", "4e-4", 1, 0.7863]]}}

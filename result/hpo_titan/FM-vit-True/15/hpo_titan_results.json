@@ -1,0 +1,1 @@
+{"vit@cifar100": {"jct": 3107.3224992752075, "service": 14234.127486228943, "best_trials": [["vit@cifar100-16", "4e-4", 1, 0.7863]]}, "vit@fashion_mnist": {"jct": 4200, "service": 14376.353740215302, "best_trials": [["vit@fashion_mnist-39", "1e-4", 1, 0.9316]]}}

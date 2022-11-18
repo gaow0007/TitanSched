@@ -1,0 +1,1 @@
+{"vit@frgfm#imagenette": {"jct": 736.1612496376038, "service": 4700.676239490509, "best_trials": [["vit@frgfm#imagenette-16", "4e-4", 1, 0.9903184713375797]]}, "vit@imagenet-split-1": {"jct": 4576.3224992752075, "service": 22554.868730068207, "best_trials": [["vit@imagenet-split-1-41", "1e-4", 8, 0.8562666666666666], ["vit@imagenet-split-1-43", "4e-4", 1, 0.9082666666666667]]}}
