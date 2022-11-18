@@ -1,0 +1,1 @@
+{"vit-large@imagenet-split-0": {"jct": 2560.4136130809784, "service": 12524.687614917755, "best_trials": [["vit-large@imagenet-split-0-17", "4e-4", 4, 0.9656]]}, "vit-large@food101": {"jct": 7742.275742053986, "service": 40695.85864853859, "best_trials": [["vit-large@food101-39", "1e-4", 1, 0.810930693069307]]}}

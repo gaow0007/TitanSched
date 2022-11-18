@@ -1,0 +1,1 @@
+{"vit-large@fashion_mnist": {"jct": 7005.275742053986, "service": 27049.549743890762, "best_trials": [["vit-large@fashion_mnist-12", "1e-4", 1, 0.937]]}, "vit-large@food101": {"jct": 9662.275742053986, "service": 39254.89355134964, "best_trials": [["vit-large@food101-39", "1e-4", 1, 0.810930693069307]]}}
