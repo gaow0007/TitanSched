@@ -27,7 +27,7 @@ class FoundationModelSpeed(object):
         self.memory_consumption = {} 
         self.context_switch_overhead = {} 
         # load files
-        accelerate = 2.0
+        accelerate = 1.0
         for GPU_KIND in ['V100', 'A100']: 
             placement_file = os.path.join(trace_dir, GPU_KIND, "{}_placements.csv".format(self.name))
             if os.path.exists(placement_file): 
@@ -39,7 +39,7 @@ class FoundationModelSpeed(object):
                 self.placements[GPU_KIND] = placements
                 
                 if GPU_KIND == 'A100': 
-                    self.placements[GPU_KIND].step_time.apply(lambda p: p / 2.0)
+                    self.placements[GPU_KIND].step_time = self.placements[GPU_KIND].step_time.apply(lambda p: p / accelerate)
                     
 
             scalability_file = os.path.join(trace_dir, GPU_KIND, "{}_scalability.csv".format(self.name))
@@ -47,7 +47,7 @@ class FoundationModelSpeed(object):
                 scalability = pandas.read_csv(scalability_file)
                 self.scalability[GPU_KIND] = scalability
                 if GPU_KIND == 'A100': 
-                    self.scalability[GPU_KIND].step_time.apply(lambda p: p / 2.0)
+                    self.scalability[GPU_KIND].step_time = self.scalability[GPU_KIND].step_time.apply(lambda p: p / accelerate)
                     
             memory_consumption_file = os.path.join(trace_dir, "{}_memory.csv".format(self.name))
             if os.path.exists(memory_consumption_file): 
@@ -58,6 +58,40 @@ class FoundationModelSpeed(object):
             if os.path.exists(context_switch_overhead_file):
                 context_switch_overhead = pandas.read_csv(context_switch_overhead_file)
                 self.context_switch_overhead[GPU_KIND] = context_switch_overhead
+
+    def build_heter_atomic_map(self, ): 
+        if not ('A100' in self.placements and 'V100' in self.placements): 
+            return None 
+        if hasattr(self, 'heter_atomic_bsz'): 
+            return self.heter_atomic_bsz
+
+        if os.path.exists('client/application/appinfo/fminfo/{}.npy'.format(self.name)): 
+            with open('client/application/appinfo/fminfo/{}.npy'.format(self.name), 'rb') as f: 
+                self.heter_atomic_bsz = np.load(f, allow_pickle=True).tolist() 
+            return self.heter_atomic_bsz 
+                
+        A100_max_local_bsz, A100_min_local_bsz = self.placements['A100'].local_bsz.max(), self.placements['A100'].local_bsz.min() 
+        V100_max_local_bsz, V100_min_local_bsz = self.placements['V100'].local_bsz.max(), self.placements['V100'].local_bsz.min() 
+        heter_atomic_bsz = dict() 
+        for V100_bsz in range(V100_min_local_bsz, V100_max_local_bsz + 1): 
+            heter_atomic_bsz[V100_bsz] = 0
+            step_time_V100, sync_time_V100 = self.get_throughput("V100", (1,), V100_bsz)
+            diff = 100 
+            left = A100_min_local_bsz if V100_bsz == V100_min_local_bsz else heter_atomic_bsz[V100_bsz-1]
+
+            for A100_bsz in range(left, A100_max_local_bsz + 1): 
+                step_time_A100, sync_time_A100 = self.get_throughput("A100", (1,), A100_bsz)
+                if abs(step_time_A100 - step_time_V100) < diff: 
+                    heter_atomic_bsz[V100_bsz] = A100_bsz 
+                    diff = abs(step_time_A100 - step_time_V100)
+                if step_time_A100 > step_time_V100: 
+                    break 
+                    
+        self.heter_atomic_bsz = heter_atomic_bsz
+        with open('client/application/appinfo/fminfo/{}.npy'.format(self.name), 'wb') as f: 
+            np.save(f, heter_atomic_bsz)
+        return heter_atomic_bsz 
+
 
     def get_context_switch_overhead(self, GPU_KIND, placement, pipeline):
         # import pdb; pdb.set_trace() 
@@ -70,7 +104,6 @@ class FoundationModelSpeed(object):
     
     @memoize
     def get_throughput(self, GPU_KIND, placement, local_bsz):
-        # print(placement, local_bsz)
         placement = tuple(filter(None, placement))
         placement = min(placement[i:] + placement[:i]
                         for i in range(len(placement)))
@@ -168,7 +201,7 @@ class FoundationModelApplication(object):
         
         # speed-related 
         self.fm_speed = FOUNDATIONMODELSPEEDS[self.model_name]
-
+        self.fm_speed.build_heter_atomic_map()
         # stats-related 
         
         self.max_local_bsz = int(self.fm_speed.placements[DEFAULT_GPU_KIND].local_bsz.max())

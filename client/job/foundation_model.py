@@ -124,11 +124,11 @@ class FoundationModelJob(BaseJob):
 
     def predict_remaining_time(self, placement): 
         GPU_KIND = DEFAULT_GPU_KIND
-        if isinstance(placement, dict) and HETER_DEBUG: 
-            merge_placement = ()
-            for item in placement.values(): 
-                merge_placement += item 
-            placement = merge_placement
+        # if isinstance(placement, dict) and HETER_DEBUG: 
+        #     merge_placement = ()
+        #     for item in placement.values(): 
+        #         merge_placement += item 
+        #     placement = merge_placement
 
         if isinstance(placement, dict) and len(placement) == 1: 
             GPU_KIND = list(placement.keys())[0]
@@ -154,6 +154,7 @@ class FoundationModelJob(BaseJob):
         if hasattr(self, 'topolocy') and self.topology is not None: 
             import pdb; pdb.set_trace() 
         else: 
+            # GPU_KIND = DEFAULT_GPU_KIND
             step_time, sync_time = self.application.get_throughput(GPU_KIND, placement, self.atomic_bsz)
         
         accum_time = step_time - sync_time
@@ -188,40 +189,75 @@ class FoundationModelJob(BaseJob):
         for gpu_kind, placement_item in placement_dict.items(): 
             merge_placement += placement_item
 
-        atomic_bsz = self.compute_local_bsz(merge_placement)
-
-        step_time_V100, sync_time_V100 = self.application.get_throughput(GPU_KIND="V100", placement=(1,), local_bsz=atomic_bsz)
-        step_time_A100, sync_time_A100 = self.application.get_throughput(GPU_KIND="A100", placement=(1,), local_bsz=atomic_bsz)
-        heter_ratio = step_time_V100 / step_time_A100
-
-        for gpu_kind, placement_item in placement_dict.items(): 
-            num_nodes += len(placement_item)
-            num_replicas += sum(placement_item) 
-            equivalent_num_replicas += sum(placement_item) * heter_ratio
         
-        batch_size = self.target_batch_size
-        local_bsz = int(math.ceil(batch_size / equivalent_num_replicas - 1e-8))
-        
-        self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
-        if num_replicas == 1 and batch_size > app.max_local_bsz:
-            self.accum_steps = max(1, self.accum_steps)
+        if False: 
+            atomic_bsz = self.compute_local_bsz(merge_placement)
+            step_time_V100, sync_time_V100 = self.application.get_throughput(GPU_KIND="V100", placement=(1,), local_bsz=atomic_bsz)
+            step_time_A100, sync_time_A100 = self.application.get_throughput(GPU_KIND="A100", placement=(1,), local_bsz=atomic_bsz)
+            heter_ratio = step_time_V100 / step_time_A100
+
+            for gpu_kind, placement_item in placement_dict.items(): 
+                num_nodes += len(placement_item)
+                num_replicas += sum(placement_item) 
+                equivalent_num_replicas += sum(placement_item) * heter_ratio
+            
+            batch_size = self.target_batch_size
+            local_bsz = int(math.ceil(batch_size / equivalent_num_replicas - 1e-8))
+            
+            self.accum_steps = math.ceil(local_bsz / app.max_local_bsz - 1e-8) - 1
+            if num_replicas == 1 and batch_size > app.max_local_bsz:
+                self.accum_steps = max(1, self.accum_steps)
+                    
+            atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
+            count = num_replicas * (self.accum_steps + 1)
+            atomic_bsz = max(min(atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
+            self.atomic_bsz = dict() 
+            self.atomic_bsz["V100"] = atomic_bsz
+            self.atomic_bsz["A100"] = max(min(int(atomic_bsz * heter_ratio), int(self.target_batch_size / count)), self.application.min_local_bsz)
+        else: 
+            V100_num_replicas = sum(placement_dict['V100'])
+            A100_num_replicas = sum(placement_dict['A100'])
+
+            best_V100_atomic_bsz = None 
+            best_A100_atomic_bsz = None
+            best_accum_steps = None 
+            
+            V100_atomic_bsz_list = sorted(self.application.fm_speed.heter_atomic_bsz.keys())
+            for accum_steps in range(10): 
+                max_V100_atomic_bsz = max(V100_atomic_bsz_list)
+                max_A100_atomic_bsz = self.application.fm_speed.heter_atomic_bsz[max_V100_atomic_bsz]
+                if (max_V100_atomic_bsz * V100_num_replicas + max_A100_atomic_bsz * A100_num_replicas) * (accum_steps + 1) < self.target_batch_size: 
+                    continue 
+                local_bsz = self.target_batch_size // (accum_steps + 1)
+                diff = 1000 
                 
-        atomic_bsz = math.ceil(local_bsz / (self.accum_steps + 1) - 1e-8)
-        count = num_replicas * (self.accum_steps + 1)
-        atomic_bsz = max(min(atomic_bsz, int(self.target_batch_size / count)), self.application.min_local_bsz)
-        self.atomic_bsz = dict() 
-        self.atomic_bsz["V100"] = atomic_bsz
-        self.atomic_bsz["A100"] = max(min(int(atomic_bsz * heter_ratio), int(self.target_batch_size / count)), self.application.min_local_bsz)
-
-
+                for V100_atomic_bsz in V100_atomic_bsz_list: 
+                    A100_atomic_bsz = self.application.fm_speed.heter_atomic_bsz[V100_atomic_bsz]
+                    total_batch_size = (A100_atomic_bsz * A100_num_replicas + V100_atomic_bsz * V100_num_replicas) * (accum_steps + 1)
+                    if abs(total_batch_size - self.target_batch_size) < diff :
+                        diff = abs(total_batch_size - self.target_batch_size)
+                        best_V100_atomic_bsz = V100_atomic_bsz
+                        best_A100_atomic_bsz = A100_atomic_bsz
+                        best_accum_steps = accum_steps
+                    if total_batch_size > self.target_batch_size: 
+                        break 
+                break 
+            assert best_V100_atomic_bsz is not None
+            self.atomic_bsz = {
+                "V100": best_V100_atomic_bsz, 
+                "A100": best_A100_atomic_bsz, 
+            }
+            self.accum_steps = best_accum_steps
+            
+            
     def update_local_bsz(self, placement):
         # print('placement == {}'.format(placement))
         GPU_KIND = DEFAULT_GPU_KIND
-        if isinstance(placement, dict) and HETER_DEBUG: 
-            merge_placement = ()
-            for item in placement.values(): 
-                merge_placement += item 
-            placement = merge_placement
+        # if isinstance(placement, dict) and HETER_DEBUG: 
+        #     merge_placement = ()
+        #     for item in placement.values(): 
+        #         merge_placement += item 
+        #     placement = merge_placement
 
         if isinstance(placement, dict) and len(placement) == 1: 
             GPU_KIND = list(placement.keys())[0]
@@ -284,9 +320,15 @@ class FoundationModelJob(BaseJob):
             # accum_time = step_time - sync_time
             total_time = sync_time + accum_time * (self.accum_steps + 1)
             if HETER_DEBUG: 
-                single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz=self.atomic_bsz[GPU_KIND])
-                single_total_time = single_sync_time + (single_step_time - single_sync_time) * (self.accum_steps + 1)
-                total_time = single_total_time
+                for GPU_KIND in ["V100", "A100"]: 
+                    single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz=self.atomic_bsz[GPU_KIND])
+                    single_total_time = single_sync_time + (single_step_time - single_sync_time) * (self.accum_steps + 1)
+                    print('gpu kind {} single total {} , true total {}'.format(GPU_KIND, single_total_time, total_time))
+                    print('gpu kind {} single step time {}, single sync time {}'.format(GPU_KIND, single_step_time, single_sync_time))
+                    # single_step_time, single_sync_time = self.application.get_throughput(GPU_KIND=GPU_KIND, placement=merge_placement, local_bsz)
+                print(self.atomic_bsz)
+                # total_time = single_total_time
+                import pdb; pdb.set_trace() 
 
             delta_progress = min(seconds / total_time * total_batch_size, self.max_progress - self.progress) 
             delta_seconds = round(float(delta_progress / total_batch_size * total_time)) 

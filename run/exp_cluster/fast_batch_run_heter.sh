@@ -4,6 +4,7 @@ prefix="" # "srun --nodes=1 --gres=gpu:0 --cpus-per-task=4 --ntasks=1 -w SG-IDC1
 # trace generation 
 # bash trace/all_trace_generation.sh
 
+# rm -rf result/heter/*
 for root in  'trace/main/'
 do 
     # match="FM-"
@@ -22,11 +23,11 @@ do
             
             add_ckpt=30
             
-            for heterogeneity in True False # False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
+            for heterogeneity in True # False # False # False # True # tiresias optimus # titan  tiresias optimus pollux # titan pollux tiresias optimus
             do 
                 schedule=titan
                 extra_cmd=""
-                scheduling_time_interval=300
+                scheduling_time_interval=60
                 ident="heter_${heterogeneity}_${schedule}_${trace}"
                 save_log_dir=result/heter/$heterogeneity/$trace/
                 mkdir -p $save_log_dir

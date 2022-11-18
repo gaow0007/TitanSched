@@ -245,14 +245,14 @@ class MetaPlaceMent(object):
             return True 
         else: 
             for topology in topology_list: 
-                placementer = self.placemnet_info[topology['gpu_kind']]
+                placementer = self.placement_info[topology[0]['gpu_kind']]
                 
                 # disconnect resources and job topology
                 for placement in topology: 
                     assert 'switch' in placement and 'nodes' in placement
                     found = False
                     cluster_key = placement['gpu_kind']
-                    cluster_instance = self.placement_info[key].cluster_manager
+                    cluster_instance = self.placement_info[cluster_key].cluster_manager
                     for switch in cluster_instance.switch_list:
                         if switch.id == placement['switch']:
                             found = True
@@ -260,7 +260,7 @@ class MetaPlaceMent(object):
                             break
                     assert found == True, 'should exist in switch list'
 
-                import pdb; pdb.set_trace() 
+                # import pdb; pdb.set_trace() 
             job.placement = None 
             job.topology = None 
             

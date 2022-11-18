@@ -98,10 +98,11 @@ def create_candidate_allocations(cluster_manager, cluster_gpu_info, heterogeneit
     candidate_allocations = list() 
     if heterogeneity: 
         for GPU_KIND in ["V100", "A100"]: 
-            total_gpu_num = cluster_gpu_info[GPU_KIND]    
-            for num_gpus in [0, 1, 2, 3] + [4 * i for i in range(total_gpu_num // 4+1)]:
+            total_gpu_num = cluster_gpu_info[GPU_KIND] 
+            if total_gpu_num == 0: continue 
+            for num_gpus in [0, 1, 2, 3] + [4 * i for i in range(1, total_gpu_num//4+1)]: 
                 placement = build_placement_from_num(num_gpus)
-                candidate_allocations.append({GPU_KIND: placement})
+                candidate_allocations.append({GPU_KIND:placement})
         
         for num_gpus_V100 in [4 * i for i in range(1, cluster_gpu_info['V100'] // 4 + 1)]: 
             placement_V100 = build_placement_from_num(num_gpus_V100)
@@ -110,7 +111,6 @@ def create_candidate_allocations(cluster_manager, cluster_gpu_info, heterogeneit
                 candidate_allocations.append({"V100": placement_V100, "A100": placement_A100})
     else: 
         candidate_allocations = list() 
-        print(cluster_gpu_info)
         for GPU_KIND in ["V100", "A100"]:
             total_gpu_num = cluster_gpu_info[GPU_KIND]    
             if total_gpu_num == 0: continue 
